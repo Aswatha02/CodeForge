@@ -1,0 +1,17 @@
+target/
+*.class
+*.jar
+*.war
+*.ear
+.idea/
+*.iml
+
+# Node.js
+node_modules/
+dist/
+build/
+
+# General
+*.log
+.DS_Store
+/.env
