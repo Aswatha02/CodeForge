@@ -1,17 +1,26 @@
+# Existing Git ignores (if any)
+*.log
+*.md
+.DS_Store
+
+# Spring Boot
 target/
-*.class
 *.jar
 *.war
 *.ear
+.mvn/
+mvnw
+mvnw.cmd
+*.class
+
+# IDEs
 .idea/
 *.iml
+.vscode/
 
-# Node.js
-node_modules/
-dist/
-build/
+# Docker
+*.dockerignore
+docker-compose.override.yml
 
-# General
-*.log
-.DS_Store
-/.env
+# Environment variables
+.env
