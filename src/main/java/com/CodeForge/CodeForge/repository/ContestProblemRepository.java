@@ -1,4 +1,4 @@
-package com.codeforge.codeforge.repository;
+package com.CodeForge.CodeForge.repository;
 
 import java.util.List;
 import java.util.Optional;
@@ -6,9 +6,9 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-import com.codeforge.codeforge.model.Contest;
-import com.codeforge.codeforge.model.ContestProblem;
-import com.codeforge.codeforge.model.Problem;
+import com.CodeForge.CodeForge.model.Contest;
+import com.CodeForge.CodeForge.model.ContestProblem;
+import com.CodeForge.CodeForge.model.Problem;
 
 @Repository
 public interface ContestProblemRepository extends JpaRepository<ContestProblem, Long> {

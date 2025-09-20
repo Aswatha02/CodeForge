@@ -1,4 +1,4 @@
-package com.codeforge.codeforge.repository;
+package com.CodeForge.CodeForge.repository;
 
 import java.util.List;
 
@@ -7,8 +7,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import com.codeforge.codeforge.model.Problem;
-import com.codeforge.codeforge.model.TestCase;
+import com.CodeForge.CodeForge.model.Problem;
+import com.CodeForge.CodeForge.model.TestCase;
 
 @Repository
 public interface TestCaseRepository extends JpaRepository<TestCase, Long> {

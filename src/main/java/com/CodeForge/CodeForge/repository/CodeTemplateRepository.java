@@ -1,4 +1,4 @@
-package com.codeforge.codeforge.repository;
+package com.CodeForge.CodeForge.repository;
 
 import java.util.List;
 import java.util.Optional;
@@ -8,8 +8,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import com.codeforge.codeforge.model.CodeTemplate;
-import com.codeforge.codeforge.model.Problem;
+import com.CodeForge.CodeForge.model.CodeTemplate;
+import com.CodeForge.CodeForge.model.Problem;
 
 @Repository
 public interface CodeTemplateRepository extends JpaRepository<CodeTemplate, Long> {

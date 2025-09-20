@@ -1,4 +1,4 @@
-package com.codeforge.codeforge.model;
+package com.CodeForge.CodeForge.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
