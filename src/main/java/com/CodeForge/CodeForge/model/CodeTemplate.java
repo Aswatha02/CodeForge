@@ -1,4 +1,4 @@
-package com.codeforge.codeforge.model;
+package com.CodeForge.CodeForge.model;
 
 import java.time.LocalDateTime;
 
@@ -56,9 +56,9 @@ public class CodeTemplate {
     }
 
     // Enum for supported languages
-    public enum Language {
-        JAVA, PYTHON, CPP, JAVASCRIPT, GO, RUST
-    }
+    public static enum Language {
+    JAVA, PYTHON, CPP, JAVASCRIPT, GO, RUST
+}
 
     // Constructors
     public CodeTemplate() {}

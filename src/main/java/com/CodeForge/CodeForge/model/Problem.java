@@ -1,4 +1,4 @@
-package com.codeforge.codeforge.model;
+package com.CodeForge.CodeForge.model;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
