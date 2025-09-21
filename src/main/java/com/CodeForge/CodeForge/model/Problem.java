@@ -4,6 +4,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -23,6 +25,8 @@ import jakarta.validation.constraints.NotNull;
 
 @Entity
 @Table(name = "problems")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+
 public class Problem {
     
     @Id
