@@ -4,6 +4,7 @@ com\CodeForge\CodeForge\model\Submission.class
 com\CodeForge\CodeForge\repository\SubmissionRepository.class
 com\CodeForge\CodeForge\model\ContestParticipant.class
 com\CodeForge\CodeForge\model\ContestProblem.class
+com\CodeForge\CodeForge\CategoryController.class
 com\CodeForge\CodeForge\repository\CodeTemplateRepository.class
 com\CodeForge\CodeForge\repository\CategoryRepository.class
 com\CodeForge\CodeForge\model\UserProgress.class

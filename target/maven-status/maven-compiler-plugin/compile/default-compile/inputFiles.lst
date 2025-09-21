@@ -1,4 +1,10 @@
+C:\Users\ADMIN\Desktop\JAVA_PACKAGE\proj\CodeForge\src\main\java\com\CodeForge\CodeForge\CategoryController.java
 C:\Users\ADMIN\Desktop\JAVA_PACKAGE\proj\CodeForge\src\main\java\com\CodeForge\CodeForge\CodeForgeApplication.java
+C:\Users\ADMIN\Desktop\JAVA_PACKAGE\proj\CodeForge\src\main\java\com\CodeForge\CodeForge\config\SecurityConfig.java
+C:\Users\ADMIN\Desktop\JAVA_PACKAGE\proj\CodeForge\src\main\java\com\CodeForge\CodeForge\config\WebConfig.java
+C:\Users\ADMIN\Desktop\JAVA_PACKAGE\proj\CodeForge\src\main\java\com\CodeForge\CodeForge\Controllers\CategoryController.java
+C:\Users\ADMIN\Desktop\JAVA_PACKAGE\proj\CodeForge\src\main\java\com\CodeForge\CodeForge\Controllers\ProblemController.java
+C:\Users\ADMIN\Desktop\JAVA_PACKAGE\proj\CodeForge\src\main\java\com\CodeForge\CodeForge\Controllers\UserController.java
 C:\Users\ADMIN\Desktop\JAVA_PACKAGE\proj\CodeForge\src\main\java\com\CodeForge\CodeForge\model\Category.java
 C:\Users\ADMIN\Desktop\JAVA_PACKAGE\proj\CodeForge\src\main\java\com\CodeForge\CodeForge\model\CodeTemplate.java
 C:\Users\ADMIN\Desktop\JAVA_PACKAGE\proj\CodeForge\src\main\java\com\CodeForge\CodeForge\model\Contest.java
@@ -19,3 +25,6 @@ C:\Users\ADMIN\Desktop\JAVA_PACKAGE\proj\CodeForge\src\main\java\com\CodeForge\C
 C:\Users\ADMIN\Desktop\JAVA_PACKAGE\proj\CodeForge\src\main\java\com\CodeForge\CodeForge\repository\TestCaseRepository.java
 C:\Users\ADMIN\Desktop\JAVA_PACKAGE\proj\CodeForge\src\main\java\com\CodeForge\CodeForge\repository\UserProgressRepository.java
 C:\Users\ADMIN\Desktop\JAVA_PACKAGE\proj\CodeForge\src\main\java\com\CodeForge\CodeForge\repository\UserRepository.java
+C:\Users\ADMIN\Desktop\JAVA_PACKAGE\proj\CodeForge\src\main\java\com\CodeForge\CodeForge\services\CategoryService.java
+C:\Users\ADMIN\Desktop\JAVA_PACKAGE\proj\CodeForge\src\main\java\com\CodeForge\CodeForge\services\ProblemService.java
+C:\Users\ADMIN\Desktop\JAVA_PACKAGE\proj\CodeForge\src\main\java\com\CodeForge\CodeForge\services\UserService.java
