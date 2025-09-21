@@ -19,6 +19,8 @@ public interface ContestRepository extends JpaRepository<Contest, Long> {
     // Find upcoming contests
     List<Contest> findByStartTimeAfter(LocalDateTime now);
 
+    boolean existByID(Long id);
+
     // Find running contests
     @Query("SELECT c FROM Contest c WHERE c.startTime <= :now AND c.endTime >= :now")
     List<Contest> findRunningContests(LocalDateTime now);

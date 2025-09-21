@@ -20,4 +20,9 @@ public interface ContestParticipantRepository extends JpaRepository<ContestParti
     Optional<ContestParticipant> findByContestAndUser(Contest contest, User user);
 
     List<ContestParticipant> findByContestOrderByScoreDesc(Contest contest);
+
+    List<ContestParticipant> findByContestWithUser(Contest contest);
+
+    boolean existsByContestAndUser(Contest contest, User user);
+
 }

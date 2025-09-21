@@ -1,6 +1,8 @@
 package com.CodeForge.CodeForge.model;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List; // ADD THIS IMPORT
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -11,6 +13,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotBlank;
@@ -111,4 +115,7 @@ public class Contest {
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    // ADD THESE GETTER AND SETTER FOR PROBLEMS
+
 }

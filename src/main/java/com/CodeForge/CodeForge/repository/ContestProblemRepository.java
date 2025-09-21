@@ -18,4 +18,9 @@ public interface ContestProblemRepository extends JpaRepository<ContestProblem, 
     Optional<ContestProblem> findByContestAndProblem(Contest contest, Problem problem);
 
     List<ContestProblem> findByProblem(Problem problem);
+
+     boolean existsByContestAndProblem(Contest contest, Problem problem);
+
+    // Remove the Problem-related methods since this repository only handles ContestProblem
+    // If you need to work with Problem entities, create a separate ProblemRepository
 }
