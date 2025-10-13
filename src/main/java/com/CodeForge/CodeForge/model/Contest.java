@@ -1,9 +1,9 @@
-package com.codeforge.codeforge.model;
+package com.CodeForge.CodeForge.model;
 
 import java.time.LocalDateTime;
 
 import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
+import jakarta.persistence.Entity; // ADD THIS IMPORT
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
@@ -111,4 +111,9 @@ public class Contest {
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    // ADD THESE GETTER AND SETTER FOR PROBLEMS
+
 }
+
+

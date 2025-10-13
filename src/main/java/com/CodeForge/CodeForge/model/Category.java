@@ -1,13 +1,15 @@
-package com.codeforge.codeforge.model;
+package com.CodeForge.CodeForge.model;
 
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import java.util.ArrayList;
 import java.util.List;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 @Entity
 @Table(name = "categories")
+
 public class Category {
     
     @Id
@@ -29,7 +31,8 @@ public class Category {
     private String colorCode; // For UI styling (e.g., "#FF5733")
 
     @ManyToMany(mappedBy = "categories")
-    private List<Problem> problems = new ArrayList<>();
+    @JsonIgnore
+    private List<Problem> problems;
 
     @Column(name = "is_active")
     private Boolean isActive = true;

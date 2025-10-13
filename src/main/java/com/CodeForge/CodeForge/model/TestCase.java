@@ -1,4 +1,4 @@
-package com.codeforge.codeforge.model;
+package com.CodeForge.CodeForge.model;
 
 import java.time.LocalDateTime;
 
@@ -16,6 +16,7 @@ import jakarta.validation.constraints.NotNull;
 
 @Entity
 @Table(name = "test_cases")
+
 public class TestCase {
     
     @Id

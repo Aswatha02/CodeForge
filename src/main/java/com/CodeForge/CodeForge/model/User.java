@@ -1,7 +1,9 @@
-package com.codeforge.codeforge.model;
+package com.CodeForge.CodeForge.model;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -19,6 +21,8 @@ import jakarta.validation.constraints.Size;
 
 @Entity
 @Table(name = "users")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+
 public class User
 {
     @Id
