@@ -1,15 +1,16 @@
 package com.CodeForge.CodeForge.services;
 
-import com.CodeForge.CodeForge.model.User;
-import com.CodeForge.CodeForge.model.UserProgress;
-import com.CodeForge.CodeForge.repository.UserProgressRepository;
-import com.CodeForge.CodeForge.repository.UserRepository;
+import java.util.List;
+import java.util.Optional;
+
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-import java.util.Optional;
+import com.CodeForge.CodeForge.model.User;
+import com.CodeForge.CodeForge.model.UserProgress;
+import com.CodeForge.CodeForge.repository.UserProgressRepository;
+import com.CodeForge.CodeForge.repository.UserRepository;
 
 @Service
 public class UserService {
@@ -18,7 +19,7 @@ public class UserService {
     private final UserProgressRepository userProgressRepository;
     private final PasswordEncoder passwordEncoder;
 
-    // ✅ Inline creation of PasswordEncoder instead of autowiring
+    
     public UserService(UserRepository userRepository,
                        UserProgressRepository userProgressRepository) {
         this.userRepository = userRepository;
@@ -26,7 +27,7 @@ public class UserService {
         this.passwordEncoder = new BCryptPasswordEncoder();
     }
 
-    // ✅ Register new user (with password hashing)
+    
     public User register(User user) {
         if (userRepository.existsByUsername(user.getUsername())) {
             throw new RuntimeException("Username already exists");

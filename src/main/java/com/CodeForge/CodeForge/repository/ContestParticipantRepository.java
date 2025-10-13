@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import com.CodeForge.CodeForge.model.Contest;
@@ -21,7 +23,8 @@ public interface ContestParticipantRepository extends JpaRepository<ContestParti
 
     List<ContestParticipant> findByContestOrderByScoreDesc(Contest contest);
 
-    List<ContestParticipant> findByContestWithUser(Contest contest);
+    @Query("SELECT cp FROM ContestParticipant cp JOIN FETCH cp.user WHERE cp.contest = :contest")
+    List<ContestParticipant> findByContestWithUser(@Param("contest") Contest contest);
 
     boolean existsByContestAndUser(Contest contest, User user);
 

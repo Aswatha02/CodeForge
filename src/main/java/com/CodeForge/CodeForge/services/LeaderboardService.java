@@ -1,16 +1,17 @@
-package com.CodeForge.CodeForge.service;
+package com.CodeForge.CodeForge.services;
 
-import com.CodeForge.CodeForge.model.Contest;
-import com.CodeForge.CodeForge.model.ContestParticipant;
-import com.CodeForge.CodeForge.model.User;
-import com.CodeForge.CodeForge.repository.ContestRepository;
-import com.CodeForge.CodeForge.repository.ContestParticipantRepository;
-import com.CodeForge.CodeForge.repository.UserRepository;
+import java.util.List;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
+import com.CodeForge.CodeForge.model.Contest;
+import com.CodeForge.CodeForge.model.ContestParticipant;
+import com.CodeForge.CodeForge.model.User;
+import com.CodeForge.CodeForge.repository.ContestParticipantRepository;
+import com.CodeForge.CodeForge.repository.ContestRepository;
+import com.CodeForge.CodeForge.repository.UserRepository;
 
 @Service
 @Transactional
@@ -35,17 +36,13 @@ public class LeaderboardService {
      * @return List of participation records ordered by score (highest first)
      */
     public List<ContestParticipant> getLeaderboard(Long contestId) {
-        // First, check if contest exists
-        if (!contestRepository.existsById(contestId)) {
-            throw new RuntimeException("Contest not found with id: " + contestId);
-        }
-        
+
         Contest contest = contestRepository.findById(contestId)
-    .orElseThrow(() -> new RuntimeException("Contest not found"));
-
-    return contestParticipantRepository.findByContestOrderByScoreDesc(contest);
-
+                .orElseThrow(() -> new RuntimeException("Contest not found with id: " + contestId));
+        // Your implementation here
+        return contestParticipantRepository.findByContestOrderByScoreDesc(contest);
     }
+
 
     /**
      * Refresh and recalculate the leaderboard for a contest
@@ -134,6 +131,17 @@ public class LeaderboardService {
                 .limit(limit)
                 .toList();
     }
+
+    public ContestParticipant getUserRankInContest(Long contestId, Long userId) {
+    List<ContestParticipant> leaderboard = getLeaderboard(contestId);
+    for (ContestParticipant cp : leaderboard) {
+        if (cp.getUser().getId().equals(userId)) {
+            return cp;
+        }
+    }
+    return null;
+    }
+
 
     /**
      * Helper method to calculate a user's score for a contest

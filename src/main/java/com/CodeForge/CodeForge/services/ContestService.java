@@ -1,24 +1,29 @@
-package com.CodeForge.CodeForge.service;
-
-import com.CodeForge.CodeForge.model.Contest;
-import com.CodeForge.CodeForge.model.ContestParticipant;
-import com.CodeForge.CodeForge.model.ContestProblem;
-import com.CodeForge.CodeForge.model.User;
-import com.CodeForge.CodeForge.model.Problem; // Add this import
-import com.CodeForge.CodeForge.model.Submission; // Add this import
-import com.CodeForge.CodeForge.repository.ContestRepository;
-import com.CodeForge.CodeForge.repository.ContestParticipantRepository;
-import com.CodeForge.CodeForge.repository.ContestProblemRepository;
-import com.CodeForge.CodeForge.repository.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import com.CodeForge.CodeForge.repository.ProblemRepository;
+package com.CodeForge.CodeForge.services;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.Optional;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service; // Add this import
+import org.springframework.transaction.annotation.Transactional; // Add this import
+
+import com.CodeForge.CodeForge.Exception.ContestAlreadyRunningException;
+import com.CodeForge.CodeForge.Exception.ContestNotFoundException;
+import com.CodeForge.CodeForge.Exception.ParticipantNotFoundException;
+import com.CodeForge.CodeForge.Exception.ProblemNotFoundException;
+import com.CodeForge.CodeForge.Exception.UserNotFoundException;
+import com.CodeForge.CodeForge.model.Contest;
+import com.CodeForge.CodeForge.model.ContestParticipant;
+import com.CodeForge.CodeForge.model.ContestProblem;
+import com.CodeForge.CodeForge.model.Problem;
+import com.CodeForge.CodeForge.model.Submission;
+import com.CodeForge.CodeForge.model.User;
+import com.CodeForge.CodeForge.repository.ContestParticipantRepository;
+import com.CodeForge.CodeForge.repository.ContestProblemRepository;
+import com.CodeForge.CodeForge.repository.ContestRepository;
+import com.CodeForge.CodeForge.repository.ProblemRepository;
+import com.CodeForge.CodeForge.repository.UserRepository;
 
 @Service
 @Transactional
@@ -63,7 +68,7 @@ public class ContestService {
             
         // Check if contest has already started
         if (existingContest.getStatus() == Contest.Status.RUNNING) {
-            throw new IllegalStateException("Cannot modify an active contest");
+             throw new ContestAlreadyRunningException(contestId);
         }
         
         // Update fields
@@ -139,6 +144,10 @@ public class ContestService {
     }
 
     // 2. Contest Registration
+    public List<Contest> getAllContests()
+    {
+        return contestRepository.findAll();
+    }
     
     public void registerUser(Long contestId, Long userId) {
         Contest contest = getContest(contestId);
@@ -184,12 +193,9 @@ public class ContestService {
         contestParticipantRepository.delete(participant);
     }
     
-    public List<User> getRegisteredUsers(Long contestId) {
-        Contest contest = getContest(contestId);
-        
-        return contestParticipantRepository.findByContest(contest).stream()
-            .map(ContestParticipant::getUser)
-            .collect(Collectors.toList());
+    public List<ContestParticipant> getRegisteredUsers(Long contestId) {
+        Contest contest = getContest(contestId); // throws ContestNotFoundException if not found
+        return contestParticipantRepository.findByContest(contest);
     }
     
     public boolean checkRegistration(Long contestId, Long userId) {
@@ -199,6 +205,16 @@ public class ContestService {
             
         
         return contestParticipantRepository.existsByContestAndUser(contest, user);
+    }
+
+    public ContestParticipant getUserRankInContest(Long contestId, Long userId) {
+        // Your implementation here
+        Contest contest = getContest(contestId);
+        User user = userRepository.findById(userId)
+            .orElseThrow(() -> new UserNotFoundException(userId));
+            
+        Optional<ContestParticipant> participant = contestParticipantRepository.findByContestAndUser(contest, user);
+        return participant.orElse(null);
     }
 
     // 3. Contest Problem Management
@@ -244,6 +260,7 @@ public class ContestService {
     
     // Delete the ContestProblem association (not the Problem itself)
     contestProblemRepository.delete(contestProblem);
+
 }
     
 
@@ -501,6 +518,15 @@ public class ContestService {
         
         return isRegistered && isAccessible;
     }
+
+    public Contest getActiveContest(Long contestId) {
+    Contest contest = contestRepository.findById(contestId)
+            .orElseThrow(() -> new IllegalArgumentException("Contest not found"));
+    if (!contest.getStatus().equals(Contest.Status.RUNNING)) {
+        throw new IllegalStateException("Contest is not running");
+    }
+    return contest;
+}
     
     public boolean checkContestConstraints(Long contestId, Submission submission) {
         Contest contest = getContest(contestId);
@@ -549,26 +575,4 @@ enum ExportFormat {
     CSV, JSON, EXCEL
 }
 
-class ContestNotFoundException extends RuntimeException {
-    public ContestNotFoundException(Long contestId) {
-        super("Contest not found with id: " + contestId);
-    }
-}
-
-class UserNotFoundException extends RuntimeException {
-    public UserNotFoundException(Long userId) {
-        super("User not found with id: " + userId);
-    }
-}
-
-class ProblemNotFoundException extends RuntimeException {
-    public ProblemNotFoundException(Long problemId) {
-        super("Problem not found with id: " + problemId);
-    }
-}
-
-class ParticipantNotFoundException extends RuntimeException {
-    public ParticipantNotFoundException(Long contestId, Long userId) {
-        super("Participant not found for contest: " + contestId + " and user: " + userId);
-    }
-}
+    
