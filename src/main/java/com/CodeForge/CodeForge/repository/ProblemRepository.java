@@ -28,6 +28,8 @@ public interface ProblemRepository extends JpaRepository<Problem, Long> {
     
     @Query("SELECT p FROM Problem p LEFT JOIN FETCH p.testCases WHERE p.id = :id")
     Optional<Problem> findByIdWithTestCases(@Param("id") Long id);
+
+    //List<Problem> searchProblems(String query, String difficulty, Long categoryId);
     
     // REMOVE or COMMENT OUT this method - it causes MultipleBagFetchException
     // @Query("SELECT p FROM Problem p LEFT JOIN FETCH p.categories LEFT JOIN FETCH p.testCases WHERE p.id = :id")

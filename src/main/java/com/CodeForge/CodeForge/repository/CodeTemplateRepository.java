@@ -10,7 +10,9 @@ import org.springframework.stereotype.Repository;
 
 import com.CodeForge.CodeForge.model.CodeTemplate;
 import com.CodeForge.CodeForge.model.Problem;
-
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.transaction.annotation.Transactional;
+import jakarta.persistence.EntityManager;
 @Repository
 public interface CodeTemplateRepository extends JpaRepository<CodeTemplate, Long> {
 
@@ -35,4 +37,8 @@ public interface CodeTemplateRepository extends JpaRepository<CodeTemplate, Long
             @Param("problem") Problem problem,
             @Param("language") CodeTemplate.Language language
     );
+
+    @Modifying
+    @Query("DELETE FROM CodeTemplate ct WHERE ct.problem.id = :problemId")
+    void deleteByProblemId(@Param("problemId") Long problemId);
 }

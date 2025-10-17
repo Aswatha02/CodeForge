@@ -8,7 +8,7 @@ export default function Register() {
     username: "",
     email: "",
     password: "",
-    role: "USER"
+    role: "USER" // Default to USER only
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -36,12 +36,12 @@ export default function Register() {
 
       console.log("Registering with data:", formData);
 
-      // Transform data to match backend expectations - FIXED
+      // Force role to be USER for all registrations
       const registrationData = {
         username: formData.username,
         email: formData.email,
-        passwordHash: formData.password, // Send as passwordHash to backend
-        role: formData.role
+        passwordHash: formData.password,
+        role: "USER" // Always set to USER, ignoring any form manipulation
       };
 
       console.log("Sending to backend:", registrationData);
@@ -52,14 +52,9 @@ export default function Register() {
       // Auto-login after registration
       login(user);
       
-      // Redirect based on role with small delay
+      // Redirect to user dashboard (not admin)
       setTimeout(() => {
-        console.log("Redirecting, user role:", user.role);
-        if (user.role === "ADMIN") {
-          navigate("/admin");
-        } else {
-          navigate("/dashboard");
-        }
+        navigate("/dashboard");
       }, 100);
     } catch (err) {
       console.error("Registration error:", err);
@@ -198,38 +193,8 @@ export default function Register() {
             />
           </div>
 
-          <div style={{ marginBottom: "24px" }}>
-            <label style={{
-              display: "block",
-              marginBottom: "8px",
-              fontWeight: "600",
-              color: "#333",
-              fontSize: "14px"
-            }}>
-              Role *
-            </label>
-            <select
-              name="role"
-              value={formData.role}
-              onChange={handleChange}
-              style={{
-                width: "100%",
-                padding: "12px",
-                border: "1px solid #ddd",
-                borderRadius: "6px",
-                fontSize: "16px",
-                boxSizing: "border-box",
-                background: "white"
-              }}
-              required
-            >
-              <option value="USER">👤 Normal User</option>
-              <option value="ADMIN">👑 Administrator</option>
-            </select>
-            <small style={{ color: "#666", marginTop: "4px", display: "block" }}>
-              Select ADMIN to access admin features
-            </small>
-          </div>
+          {/* Remove Role Selection Completely */}
+          <input type="hidden" name="role" value="USER" />
 
           <button
             type="submit"

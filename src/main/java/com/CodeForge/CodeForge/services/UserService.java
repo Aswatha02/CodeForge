@@ -1,148 +1,213 @@
 package com.CodeForge.CodeForge.services;
 
-import java.util.List;
-import java.util.Optional;
-
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Service;
-
 import com.CodeForge.CodeForge.model.User;
 import com.CodeForge.CodeForge.model.UserProgress;
 import com.CodeForge.CodeForge.repository.UserRepository;
-<<<<<<< HEAD
-=======
 import com.CodeForge.CodeForge.repository.UserProgressRepository;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
->>>>>>> 7eacae3b011a02252ecc82d768f012602d1999c5
 
 @Service
-@RequiredArgsConstructor
 public class UserService {
-    
+
     private final UserRepository userRepository;
     private final UserProgressRepository userProgressRepository;
+    private final PasswordEncoder passwordEncoder;
 
-<<<<<<< HEAD
-    
-    public UserService(UserRepository userRepository,
-                       UserProgressRepository userProgressRepository) {
+    @Autowired
+    public UserService(UserRepository userRepository, 
+                      UserProgressRepository userProgressRepository,
+                      PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.userProgressRepository = userProgressRepository;
-        this.passwordEncoder = new BCryptPasswordEncoder();
+        this.passwordEncoder = passwordEncoder;
     }
 
-    
-    public User register(User user) {
-=======
-    @Transactional
     public User registerUser(User user) {
->>>>>>> 7eacae3b011a02252ecc82d768f012602d1999c5
-        if (userRepository.existsByUsername(user.getUsername())) {
+        // Check if username already exists
+        if (userRepository.findByUsername(user.getUsername()).isPresent()) {
             throw new RuntimeException("Username already exists");
         }
-        if (userRepository.existsByEmail(user.getEmail())) {
+        
+        // Check if email already exists
+        if (userRepository.findByEmail(user.getEmail()).isPresent()) {
             throw new RuntimeException("Email already exists");
+        }
+        
+        // Hash password before saving
+        user.setPasswordHash(passwordEncoder.encode(user.getPasswordHash()));
+        
+        // Set default role if not provided
+        if (user.getRole() == null) {
+            user.setRole(User.Role.USER);
         }
         
         User savedUser = userRepository.save(user);
         
-        // Create user progress
-        UserProgress progress = new UserProgress();
-        progress.setUser(savedUser);
-        userProgressRepository.save(progress);
+        // Create initial user progress with your field names
+        UserProgress initialProgress = new UserProgress();
+        initialProgress.setUser(savedUser);
+        initialProgress.setSolvedCount(0);
+        initialProgress.setSolvedEasyCount(0);
+        initialProgress.setSolvedMediumCount(0);
+        initialProgress.setSolvedHardCount(0);
+        initialProgress.setTotalSubmissions(0);
+        initialProgress.setAcceptedSubmissions(0);
+        initialProgress.setCurrentStreak(0);
+        initialProgress.setMaxStreak(0);
+        initialProgress.setStatus(UserProgress.Status.ACTIVE);
+        userProgressRepository.save(initialProgress);
         
-        return savedUser; // REMOVED .getSafeUser() - just return the user
+        return savedUser;
     }
 
     public User loginUser(String usernameOrEmail, String password) {
         Optional<User> userOpt = userRepository.findByUsernameOrEmail(usernameOrEmail);
+        
         if (userOpt.isEmpty()) {
-            throw new RuntimeException("User not found");
+            throw new RuntimeException("Invalid username/email or password");
         }
         
         User user = userOpt.get();
-        if (!user.getPasswordHash().equals(password)) {
-            throw new RuntimeException("Invalid password");
+        
+        if (!passwordEncoder.matches(password, user.getPasswordHash())) {
+            throw new RuntimeException("Invalid username/email or password");
         }
         
-        return user; // REMOVED .getSafeUser() - just return the user
-    }
-
-    public Optional<User> getUserById(Long id) {
-        return userRepository.findById(id); // REMOVED .map(User::getSafeUser)
-    }
-
-    public List<User> getAllUsers() {
-        return userRepository.findAll(); // REMOVED .stream().map(User::getSafeUser).toList()
+        return user;
     }
 
     public UserProgress getUserProgress(Long userId) {
-        return userProgressRepository.findByUserId(userId)
-                .orElseThrow(() -> new RuntimeException("User progress not found"));
+        return userProgressRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User progress not found for user id: " + userId));
     }
 
-    @Transactional
-    public UserProgress updateUserProgress(Long userId, UserProgress progressUpdate) {
+    public UserProgress updateUserProgress(Long userId, UserProgress progress) {
+        UserProgress existingProgress = getUserProgress(userId);
+        
+        // Update progress fields if they are provided in the request
+        if (progress.getSolvedCount() != null) {
+            existingProgress.setSolvedCount(progress.getSolvedCount());
+        }
+        if (progress.getSolvedEasyCount() != null) {
+            existingProgress.setSolvedEasyCount(progress.getSolvedEasyCount());
+        }
+        if (progress.getSolvedMediumCount() != null) {
+            existingProgress.setSolvedMediumCount(progress.getSolvedMediumCount());
+        }
+        if (progress.getSolvedHardCount() != null) {
+            existingProgress.setSolvedHardCount(progress.getSolvedHardCount());
+        }
+        if (progress.getTotalSubmissions() != null) {
+            existingProgress.setTotalSubmissions(progress.getTotalSubmissions());
+        }
+        if (progress.getAcceptedSubmissions() != null) {
+            existingProgress.setAcceptedSubmissions(progress.getAcceptedSubmissions());
+        }
+        if (progress.getCurrentStreak() != null) {
+            existingProgress.setCurrentStreak(progress.getCurrentStreak());
+        }
+        if (progress.getMaxStreak() != null) {
+            existingProgress.setMaxStreak(progress.getMaxStreak());
+        }
+        if (progress.getStatus() != null) {
+            existingProgress.setStatus(progress.getStatus());
+        }
+        
+        return userProgressRepository.save(existingProgress);
+    }
+
+    // Helper method to calculate success rate
+    public double calculateSuccessRate(UserProgress progress) {
+        if (progress.getTotalSubmissions() == 0) {
+            return 0.0;
+        }
+        return (double) progress.getAcceptedSubmissions() / progress.getTotalSubmissions() * 100;
+    }
+
+    // Method to update progress when a problem is solved
+    public UserProgress updateProgressOnSubmission(Long userId, boolean accepted, String difficulty) {
         UserProgress progress = getUserProgress(userId);
         
-        if (progressUpdate.getSolvedCount() != null) {
-            progress.setSolvedCount(progressUpdate.getSolvedCount());
-        }
-        if (progressUpdate.getSolvedEasyCount() != null) {
-            progress.setSolvedEasyCount(progressUpdate.getSolvedEasyCount());
-        }
-        if (progressUpdate.getSolvedMediumCount() != null) {
-            progress.setSolvedMediumCount(progressUpdate.getSolvedMediumCount());
-        }
-        if (progressUpdate.getSolvedHardCount() != null) {
-            progress.setSolvedHardCount(progressUpdate.getSolvedHardCount());
-        }
-        if (progressUpdate.getTotalSubmissions() != null) {
-            progress.setTotalSubmissions(progressUpdate.getTotalSubmissions());
-        }
-        if (progressUpdate.getAcceptedSubmissions() != null) {
-            progress.setAcceptedSubmissions(progressUpdate.getAcceptedSubmissions());
-        }
-        if (progressUpdate.getCurrentStreak() != null) {
-            progress.setCurrentStreak(progressUpdate.getCurrentStreak());
-        }
-        if (progressUpdate.getMaxStreak() != null) {
-            progress.setMaxStreak(progressUpdate.getMaxStreak());
+        // Update total submissions
+        progress.setTotalSubmissions(progress.getTotalSubmissions() + 1);
+        
+        if (accepted) {
+            // Update accepted submissions
+            progress.setAcceptedSubmissions(progress.getAcceptedSubmissions() + 1);
+            
+            // Update solved counts based on difficulty
+            progress.setSolvedCount(progress.getSolvedCount() + 1);
+            
+            switch (difficulty.toUpperCase()) {
+                case "EASY":
+                    progress.setSolvedEasyCount(progress.getSolvedEasyCount() + 1);
+                    break;
+                case "MEDIUM":
+                    progress.setSolvedMediumCount(progress.getSolvedMediumCount() + 1);
+                    break;
+                case "HARD":
+                    progress.setSolvedHardCount(progress.getSolvedHardCount() + 1);
+                    break;
+            }
+            
+            // Update streaks
+            progress.setCurrentStreak(progress.getCurrentStreak() + 1);
+            if (progress.getCurrentStreak() > progress.getMaxStreak()) {
+                progress.setMaxStreak(progress.getCurrentStreak());
+            }
+        } else {
+            // Reset current streak if submission is not accepted
+            progress.setCurrentStreak(0);
         }
         
         return userProgressRepository.save(progress);
     }
 
-    @Transactional
-    public void updateProgressAfterSubmission(Long userId, boolean accepted, String difficulty) {
-        UserProgress progress = getUserProgress(userId);
+    public List<User> getAllUsers() {
+        return userRepository.findAll();
+    }
+
+    public User getUserById(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
+    }
+
+    public User updateUser(Long userId, User userDetails) {
+        User existingUser = getUserById(userId);
         
-        progress.setTotalSubmissions(progress.getTotalSubmissions() + 1);
-        
-        if (accepted) {
-            progress.setAcceptedSubmissions(progress.getAcceptedSubmissions() + 1);
-            progress.setSolvedCount(progress.getSolvedCount() + 1);
-            
-            if ("EASY".equals(difficulty)) {
-                progress.setSolvedEasyCount(progress.getSolvedEasyCount() + 1);
-            } else if ("MEDIUM".equals(difficulty)) {
-                progress.setSolvedMediumCount(progress.getSolvedMediumCount() + 1);
-            } else if ("HARD".equals(difficulty)) {
-                progress.setSolvedHardCount(progress.getSolvedHardCount() + 1);
+        // Update only allowed fields
+        if (userDetails.getUsername() != null && !userDetails.getUsername().trim().isEmpty()) {
+            // Check if username is already taken by another user
+            Optional<User> userWithSameUsername = userRepository.findByUsername(userDetails.getUsername());
+            if (userWithSameUsername.isPresent() && !userWithSameUsername.get().getId().equals(userId)) {
+                throw new RuntimeException("Username is already taken");
             }
-            
-            progress.setCurrentStreak(progress.getCurrentStreak() + 1);
-            if (progress.getCurrentStreak() > progress.getMaxStreak()) {
-                progress.setMaxStreak(progress.getCurrentStreak());
-            }
+            existingUser.setUsername(userDetails.getUsername());
         }
         
-        userProgressRepository.save(progress);
+        if (userDetails.getEmail() != null && !userDetails.getEmail().trim().isEmpty()) {
+            // Check if email is already taken by another user
+            Optional<User> userWithSameEmail = userRepository.findByEmail(userDetails.getEmail());
+            if (userWithSameEmail.isPresent() && !userWithSameEmail.get().getId().equals(userId)) {
+                throw new RuntimeException("Email is already taken");
+            }
+            existingUser.setEmail(userDetails.getEmail());
+        }
+        
+        if (userDetails.getRole() != null) {
+            existingUser.setRole(userDetails.getRole());
+        }
+        
+        return userRepository.save(existingUser);
+    }
+
+    public void deleteUser(Long userId) {
+        User user = getUserById(userId);
+        userRepository.delete(user);
     }
 }

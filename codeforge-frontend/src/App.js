@@ -1,5 +1,5 @@
 import React from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import Navbar from "./components/Navbar";
 import Register from "./components/Register";
@@ -47,11 +47,10 @@ function AppContent() {
           <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/login" replace />} />
           <Route path="/admin" element={isAdmin ? <AdminDashboard /> : <Navigate to="/dashboard" replace />} />
           <Route path="/problems" element={<ProblemList />} />
-          <Route path="/problems/new" element={isAdmin ? <CreateProblem /> : <Navigate to="/login" replace />} />
+          <Route path="/problems/new" element={isAdmin ? <CreateProblem /> : <Navigate to="/dashboard" replace />} />
           <Route path="/problems/:id" element={<ProblemDetail />} />
           <Route path="/categories" element={<CategoryList />} />
-          <Route path="/categories/:id" element={<CategoryList />} />
-          <Route path="/categories/new" element={isAdmin ? <CreateCategory /> : <Navigate to="/login" replace />} />
+          <Route path="/categories/new" element={isAdmin ? <CreateCategory /> : <Navigate to="/dashboard" replace />} />
           <Route path="/submissions" element={user ? <Submissions /> : <Navigate to="/login" replace />} />
           <Route path="/progress" element={user ? <UserProgress /> : <Navigate to="/login" replace />} />
         </Routes>
@@ -62,9 +61,11 @@ function AppContent() {
 
 function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <Router>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </Router>
   );
 }
 

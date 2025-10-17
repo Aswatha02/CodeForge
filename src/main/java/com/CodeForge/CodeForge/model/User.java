@@ -64,11 +64,141 @@ public class User {
     private LocalDateTime updatedAt = LocalDateTime.now();
 
     public enum Role {
-        USER, ADMIN
+        USER, ADMIN, PROBLEM_SETTER
     }
 
     @PreUpdate
     public void preUpdate() {
         this.updatedAt = LocalDateTime.now();
     }
+
+   // Getters
+    public Long getId() {
+        return id;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public String getPasswordHash() {
+        return passwordHash;
+    }
+
+    public Role getRole() {
+        return role;
+    }
+
+    public UserProgress getUserProgress() {
+        return userProgress;
+    }
+
+    public List<Problem> getCreatedProblems() {
+        return createdProblems;
+    }
+
+    public List<Submission> getSubmissions() {
+        return submissions;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    // Setters
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
+    public void setRole(Role role) {
+        this.role = role;
+    }
+
+    public void setUserProgress(UserProgress userProgress) {
+        this.userProgress = userProgress;
+    }
+
+    public void setCreatedProblems(List<Problem> createdProblems) {
+        this.createdProblems = createdProblems;
+    }
+
+    public void setSubmissions(List<Submission> submissions) {
+        this.submissions = submissions;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
+    // Utility methods for collections
+    public void addCreatedProblem(Problem problem) {
+        this.createdProblems.add(problem);
+        problem.setCreator(this);
+    }
+
+    public void removeCreatedProblem(Problem problem) {
+        this.createdProblems.remove(problem);
+        problem.setCreator(null);
+    }
+
+    public void addSubmission(Submission submission) {
+        this.submissions.add(submission);
+        submission.setUser(this);
+    }
+
+    public void removeSubmission(Submission submission) {
+        this.submissions.remove(submission);
+        submission.setUser(null);
+    }
+
+    // equals and hashCode
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof User)) return false;
+        User user = (User) o;
+        return id != null && id.equals(user.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return getClass().hashCode();
+    }
+
+    // toString (simplified to avoid circular references)
+    @Override
+    public String toString() {
+        return "User{" +
+                "id=" + id +
+                ", username='" + username + '\'' +
+                ", email='" + email + '\'' +
+                ", role=" + role +
+                ", createdAt=" + createdAt +
+                '}';
+    }
+
 }

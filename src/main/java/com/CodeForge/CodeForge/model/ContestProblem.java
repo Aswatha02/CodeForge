@@ -11,6 +11,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
+
 @Entity
 @Table(name = "contest_problems", uniqueConstraints = {
         @UniqueConstraint(columnNames = {"contest_id", "problem_id"})

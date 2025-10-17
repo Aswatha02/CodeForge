@@ -65,7 +65,24 @@ export const createProblem = (problemData, creatorId) =>
     body: JSON.stringify(problemData) 
   });
 
-export const getProblem = (id) => request(`/problems/${id}`);
+// In your api.js - check what endpoint it's calling
+export const getProblem = async (id) => {
+  const response = await fetch(`/api/problems/${id}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${localStorage.getItem('token')}`
+    }
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch problem');
+  }
+  
+  const data = await response.json();
+  console.log('API Response:', data); // ← ADD THIS
+  return data;
+};
 
 export const listProblems = () => request(`/problems`);
 

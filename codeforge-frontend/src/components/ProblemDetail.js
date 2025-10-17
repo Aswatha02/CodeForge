@@ -13,20 +13,65 @@ export default function ProblemDetail() {
   const [submissionResult, setSubmissionResult] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Enhanced fetchProblem function
+  const fetchProblem = async (problemId) => {
+    try {
+      console.log("🔄 Fetching problem with ID:", problemId);
+      const response = await fetch(`http://localhost:8080/api/problems/${problemId}`);
+      
+      console.log("📡 Response status:", response.status);
+      console.log("📡 Response URL:", response.url);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const problemData = await response.json();
+      console.log("✅ Problem data received:", problemData);
+      return problemData;
+      
+    } catch (error) {
+      console.error("❌ Error fetching problem:", error);
+      throw error;
+    }
+  };
+
   useEffect(() => {
-    const fetchProblem = async () => {
+    const loadProblem = async () => {
       try {
         setLoading(true);
-        const problemData = await getProblem(id);
+        const problemData = await fetchProblem(id);
+        
+        // EXTENSIVE DEBUGGING
+        console.log("=== PROBLEM DATA DEBUG ===");
+        console.log("Problem ID:", problemData.id);
+        console.log("Problem Title:", problemData.title);
+        console.log("Has codeTemplates:", !!problemData.codeTemplates);
+        console.log("codeTemplates array:", problemData.codeTemplates);
+        console.log("codeTemplates length:", problemData.codeTemplates?.length);
+        
+        if (problemData.codeTemplates && problemData.codeTemplates.length > 0) {
+          problemData.codeTemplates.forEach((template, index) => {
+            console.log(`--- Template ${index} ---`);
+            console.log("Language:", template.language);
+            console.log("TemplateCode field exists:", 'templateCode' in template);
+            console.log("TemplateCode value:", template.templateCode);
+            console.log("TemplateCode length:", template.templateCode?.length);
+            console.log("All template keys:", Object.keys(template));
+          });
+        } else {
+          console.log("❌ NO CODE TEMPLATES FOUND IN PROBLEM DATA");
+        }
+        
         setProblem(problemData);
       } catch (err) {
-        setError(err?.data?.message || 'Failed to fetch problem');
+        setError(err?.message || 'Failed to fetch problem');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchProblem();
+    loadProblem();
   }, [id]);
 
   const handleCodeSubmit = async (submission) => {
@@ -113,7 +158,7 @@ export default function ProblemDetail() {
               {problem.title}
             </h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span className={`difficulty-badge difficulty-${problem.difficulty.toLowerCase()}`}>
+              <span className={`difficulty-badge difficulty-${problem.difficulty?.toLowerCase()}`}>
                 {problem.difficulty}
               </span>
               <div style={{ display: 'flex', gap: '8px' }}>
@@ -257,10 +302,12 @@ export default function ProblemDetail() {
         <div style={{ flex: 1, padding: '24px' }}>
           {user ? (
             <>
+              {/* FIX: Pass problem data to CodeEditor */}
               <CodeEditor 
                 onCodeSubmit={handleCodeSubmit}
                 problemId={problem.id}
                 userId={user.id}
+                problemData={problem} // ← THIS IS THE FIX!
               />
               
               {/* Submission Result */}

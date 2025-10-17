@@ -2,45 +2,86 @@ package com.CodeForge.CodeForge.services;
 
 import com.CodeForge.CodeForge.model.*;
 import com.CodeForge.CodeForge.repository.*;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.*;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.Data;
+import com.fasterxml.jackson.databind.JsonNode;
+
+@Data
 @Service
-@RequiredArgsConstructor
 public class ProblemService {
-    
+
     private final ProblemRepository problemRepository;
     private final CategoryRepository categoryRepository;
     private final TestCaseRepository testCaseRepository;
+    private final CodeTemplateRepository codeTemplateRepository;
     private final UserRepository userRepository;
     private final SubmissionRepository submissionRepository;
-    private final UserService userService;
+    private final ContestProblemRepository contestProblemRepository;
+    private final UserProgressRepository userProgressRepository;
+
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    // Manually created constructor for dependency injection
+    public ProblemService(
+            ProblemRepository problemRepository,
+            CategoryRepository categoryRepository,
+            TestCaseRepository testCaseRepository,
+            CodeTemplateRepository codeTemplateRepository,
+            UserRepository userRepository,
+            SubmissionRepository submissionRepository,
+            ContestProblemRepository contestProblemRepository,
+            UserProgressRepository userProgressRepository
+    ) {
+        this.problemRepository = problemRepository;
+        this.categoryRepository = categoryRepository;
+        this.testCaseRepository = testCaseRepository;
+        this.codeTemplateRepository = codeTemplateRepository;
+        this.userRepository = userRepository;
+        this.submissionRepository = submissionRepository;
+        this.contestProblemRepository = contestProblemRepository;
+        this.userProgressRepository = userProgressRepository;
+    }
 
     @Transactional
     public Problem createProblem(Problem problem, Long creatorId) {
         User creator = userRepository.findById(creatorId)
                 .orElseThrow(() -> new RuntimeException("Creator not found"));
         
-        // Check if slug already exists
         if (problemRepository.findBySlug(problem.getSlug()).isPresent()) {
             throw new RuntimeException("Problem slug already exists");
         }
         
         problem.setCreator(creator);
         
-        // Save problem first to get ID
+        // Save problem first
         Problem savedProblem = problemRepository.save(problem);
         
+        // Save code templates
+        if (problem.getCodeTemplates() != null && !problem.getCodeTemplates().isEmpty()) {
+            for (CodeTemplate codeTemplate : problem.getCodeTemplates()) {
+                codeTemplate.setProblem(savedProblem);
+                codeTemplateRepository.save(codeTemplate);
+            }
+        }
+        
         // Save test cases
-        if (problem.getTestCases() != null) {
+        if (problem.getTestCases() != null && !problem.getTestCases().isEmpty()) {
             for (TestCase testCase : problem.getTestCases()) {
                 testCase.setProblem(savedProblem);
+                
+                // Validate test case JSON format
+                validateTestCaseFormat(testCase.getInputData(), testCase.getExpectedOutput());
+                
                 testCaseRepository.save(testCase);
             }
         }
@@ -48,17 +89,56 @@ public class ProblemService {
         return savedProblem;
     }
 
+    private void validateTestCaseFormat(String inputData, String expectedOutput) {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            
+            // Validate input is proper JSON
+            JsonNode inputNode = mapper.readTree(inputData);
+            
+            // Validate expected output format
+            JsonNode outputNode = mapper.readTree(expectedOutput);
+            
+        } catch (Exception e) {
+            throw new RuntimeException("Invalid test case format: " + e.getMessage());
+        }
+    }
+
     public List<Problem> getAllProblems() {
         return problemRepository.findAllActive();
     }
 
     public Optional<Problem> getProblemById(Long id) {
-        // CHANGED: Use simple findById instead of complex join
-        return problemRepository.findById(id);
+        Optional<Problem> problemOpt = problemRepository.findById(id);
+        
+        if (problemOpt.isPresent()) {
+            Problem problem = problemOpt.get();
+            
+            List<CodeTemplate> codeTemplates = codeTemplateRepository.findByProblem(problem);
+            problem.setCodeTemplates(codeTemplates);
+            
+            List<TestCase> testCases = testCaseRepository.findByProblem(problem);
+            problem.setTestCases(testCases);
+            
+            return Optional.of(problem);
+        }
+        
+        return Optional.empty();
     }
 
     public Optional<Problem> getProblemBySlug(String slug) {
-        return problemRepository.findBySlug(slug);
+        Optional<Problem> problemOpt = problemRepository.findBySlug(slug);
+        
+        if (problemOpt.isPresent()) {
+            Problem problem = problemOpt.get();
+            
+            List<CodeTemplate> codeTemplates = codeTemplateRepository.findByProblem(problem);
+            problem.setCodeTemplates(codeTemplates);
+            
+            return Optional.of(problem);
+        }
+        
+        return Optional.empty();
     }
 
     public List<Problem> getProblemsByCategory(Long categoryId) {
@@ -70,183 +150,79 @@ public class ProblemService {
     }
 
     @Transactional
-    public Submission submitSolution(Long problemId, Long userId, String code, Submission.Language language) {
-        Problem problem = problemRepository.findById(problemId)
+    public Problem updateProblem(Long problemId, Problem updatedProblem, Long userId) {
+        Problem existingProblem = problemRepository.findById(problemId)
                 .orElseThrow(() -> new RuntimeException("Problem not found"));
+        
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         
-        Submission submission = new Submission();
-        submission.setProblem(problem);
-        submission.setUser(user);
-        submission.setCode(code);
-        submission.setLanguage(language);
-        submission.setStatus(Submission.Status.PENDING);
-        
-        // Get test cases for this problem
-        List<TestCase> testCases = testCaseRepository.findByProblemId(problemId);
-        
-        // Actually execute and test the code
-        Submission result = executeAndTestCode(submission, testCases);
-        
-        Submission savedSubmission = submissionRepository.save(result);
-        
-        // Update user progress
-        boolean accepted = result.getStatus() == Submission.Status.ACCEPTED;
-        userService.updateProgressAfterSubmission(userId, accepted, problem.getDifficulty().name());        
-        return savedSubmission;
-    }
-
-    private Submission executeAndTestCode(Submission submission, List<TestCase> testCases) {
-        if (testCases.isEmpty()) {
-            submission.setStatus(Submission.Status.ACCEPTED); // No test cases = auto accept
-            submission.setExecutionTime(0);
-            submission.setMemoryUsed(0);
-            return submission;
-        }
-
-        // For Python submissions
-        if (submission.getLanguage() == Submission.Language.PYTHON) {
-            return executePythonCode(submission, testCases);
-        }
-
-        // For other languages, you can add similar methods
-        submission.setStatus(Submission.Status.RUNTIME_ERROR);
-        submission.setExecutionTime(0);
-        submission.setMemoryUsed(0);
-        return submission;
-    }
-
-    private Submission executePythonCode(Submission submission, List<TestCase> testCases) {
-        try {
-            // Create a temporary Python file
-            File pythonFile = File.createTempFile("submission", ".py");
-            pythonFile.deleteOnExit();
-            
-            // Write the user's code to the file
-            try (FileWriter writer = new FileWriter(pythonFile)) {
-                writer.write(submission.getCode());
-                writer.write("\n\n");
-                writer.write(getPythonTestRunner());
-            }
-
-            boolean allTestsPassed = true;
-            int totalExecutionTime = 0;
-            int maxMemoryUsed = 0;
-
-            for (TestCase testCase : testCases) {
-                ProcessBuilder processBuilder = new ProcessBuilder("python", pythonFile.getAbsolutePath());
-                processBuilder.redirectErrorStream(true);
-                
-                Process process = processBuilder.start();
-                
-                // Write input to process
-                try (OutputStream outputStream = process.getOutputStream();
-                     PrintWriter writer = new PrintWriter(outputStream)) {
-                    writer.write(testCase.getInputData());
-                    writer.flush();
-                }
-                
-                // Wait for process to complete with timeout (5 seconds)
-                boolean finished = process.waitFor(5, TimeUnit.SECONDS);
-                
-                if (!finished) {
-                    process.destroyForcibly();
-                    submission.setStatus(Submission.Status.TIME_LIMIT_EXCEEDED);
-                    submission.setExecutionTime(5000); // 5 seconds timeout
-                    submission.setMemoryUsed(0);
-                    return submission;
-                }
-                
-                // Read output
-                StringBuilder output = new StringBuilder();
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        output.append(line).append("\n");
-                    }
-                }
-                
-                String actualOutput = output.toString().trim();
-                String expectedOutput = testCase.getExpectedOutput().trim();
-                
-                // Compare outputs
-                if (!actualOutput.equals(expectedOutput)) {
-                    allTestsPassed = false;
-                    break;
-                }
-                
-                // Simulate execution metrics (in real system, you'd use proper profiling)
-                totalExecutionTime += 50 + (int)(Math.random() * 50); // 50-100ms per test
-                maxMemoryUsed = Math.max(maxMemoryUsed, 5 + (int)(Math.random() * 5)); // 5-10MB
-            }
-            
-            pythonFile.delete();
-            
-            if (allTestsPassed) {
-                submission.setStatus(Submission.Status.ACCEPTED);
-            } else {
-                submission.setStatus(Submission.Status.WRONG_ANSWER);
-            }
-            
-            submission.setExecutionTime(totalExecutionTime);
-            submission.setMemoryUsed(maxMemoryUsed);
-            
-        } catch (IOException e) {
-            submission.setStatus(Submission.Status.RUNTIME_ERROR);
-            submission.setExecutionTime(0);
-            submission.setMemoryUsed(0);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            submission.setStatus(Submission.Status.RUNTIME_ERROR);
-            submission.setExecutionTime(0);
-            submission.setMemoryUsed(0);
-        } catch (Exception e) {
-            submission.setStatus(Submission.Status.RUNTIME_ERROR);
-            submission.setExecutionTime(0);
-            submission.setMemoryUsed(0);
+        if (!existingProblem.getCreator().getId().equals(userId) && !user.getRole().equals("ADMIN")) {
+            throw new RuntimeException("Not authorized to update this problem");
         }
         
-        return submission;
-    }
-
-    private String getPythonTestRunner() {
-        return """
-            import sys
-            import ast
+        existingProblem.setTitle(updatedProblem.getTitle());
+        existingProblem.setDescription(updatedProblem.getDescription());
+        existingProblem.setInputFormat(updatedProblem.getInputFormat());
+        existingProblem.setOutputFormat(updatedProblem.getOutputFormat());
+        existingProblem.setDifficulty(updatedProblem.getDifficulty());
+        existingProblem.setTimeLimitMs(updatedProblem.getTimeLimitMs());
+        existingProblem.setMemoryLimitMb(updatedProblem.getMemoryLimitMb());
+        
+        if (updatedProblem.getCategories() != null) {
+            existingProblem.setCategories(updatedProblem.getCategories());
+        }
+        
+        if (updatedProblem.getCodeTemplates() != null) {
+            codeTemplateRepository.deleteByProblemId(problemId);
             
-            def read_input():
-                return sys.stdin.read().strip()
+            for (CodeTemplate codeTemplate : updatedProblem.getCodeTemplates()) {
+                codeTemplate.setProblem(existingProblem);
+                codeTemplateRepository.save(codeTemplate);
+            }
+        }
+        
+        if (updatedProblem.getTestCases() != null) {
+            testCaseRepository.deleteByProblemId(problemId);
             
-            if __name__ == "__main__":
-                try:
-                    input_data = read_input()
-                    result = twoSum(input_data)
-                    if result is None:
-                        print("[]")
-                    elif isinstance(result, list):
-                        print(str(result))
-                    else:
-                        print(str(result))
-                except Exception as e:
-                    print("ERROR: " + str(e))
-                    sys.exit(1)
-            """;
+            for (TestCase testCase : updatedProblem.getTestCases()) {
+                testCase.setProblem(existingProblem);
+                testCaseRepository.save(testCase);
+            }
+        }
+        
+        return problemRepository.save(existingProblem);
     }
 
     @Transactional
-    public void deleteProblem(Long problemId) {
+    public void deleteProblem(Long problemId, Long userId) {
         Problem problem = problemRepository.findById(problemId)
                 .orElseThrow(() -> new RuntimeException("Problem not found"));
-        
-        // Delete related test cases first
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (!problem.getCreator().getId().equals(userId) && user.getRole() != User.Role.ADMIN) {
+            throw new RuntimeException("Not authorized to delete this problem");
+        }
+
+        // Delete related entities first to avoid foreign key constraint violations
+
+        // Delete submissions related to this problem
+        submissionRepository.deleteByProblemId(problemId);
+
+        // Delete contest problems related to this problem
+        contestProblemRepository.deleteByProblem(problem);
+
+        // Delete code templates and test cases
+        codeTemplateRepository.deleteByProblemId(problemId);
         testCaseRepository.deleteByProblemId(problemId);
-        
+
+        // Finally delete the problem
         problemRepository.delete(problem);
     }
 
     public List<Problem> searchProblems(String query, String difficulty, Long categoryId) {
-        // Basic search implementation - can be enhanced with full-text search
         List<Problem> allProblems = getAllProblems();
         
         return allProblems.stream()

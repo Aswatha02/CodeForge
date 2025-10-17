@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { listProblems, listCategories, getProblemsByCategory } from "../api";
+import { listProblems, listCategories, getProblemsByCategory, deleteProblem } from "../api";
 
 export default function ProblemList() {
   const { id } = useParams();
@@ -50,6 +50,17 @@ export default function ProblemList() {
   };
 
   const difficultyCounts = getProblemsCountByDifficulty();
+
+  const handleDeleteProblem = async (problemId) => {
+    if (window.confirm('Are you sure you want to delete this problem?')) {
+      try {
+        await deleteProblem(problemId);
+        setProblems(problems.filter(p => p.id !== problemId));
+      } catch (error) {
+        alert('Failed to delete problem');
+      }
+    }
+  };
 
   if (loading) {
     return (
@@ -363,8 +374,8 @@ export default function ProblemList() {
                       {problem.category?.name || 'Uncategorized'}
                     </span>
                   </div>
-                  <div>
-                    <Link 
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <Link
                       to={`/problems/${problem.id || problem._id}`}
                       style={{
                         padding: '6px 12px',
@@ -378,6 +389,23 @@ export default function ProblemList() {
                     >
                       Solve
                     </Link>
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleDeleteProblem(problem.id || problem._id)}
+                        style={{
+                          padding: '6px 12px',
+                          background: '#dc3545',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          fontWeight: '500',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

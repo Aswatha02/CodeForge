@@ -1,4 +1,4 @@
-package com.CodeForge.CodeForge.controllers;
+package com.CodeForge.CodeForge.Controllers;
 
 import java.util.List;
 
@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.CodeForge.CodeForge.Exception.UserNotAuthorizedException;
-import com.CodeForge.CodeForge.dto.SubmissionRequestDTO;
+import com.CodeForge.CodeForge.dto.SubmissionRequest;
 import com.CodeForge.CodeForge.model.Submission;
 import com.CodeForge.CodeForge.model.User;
 import com.CodeForge.CodeForge.repository.UserRepository;
@@ -28,11 +28,17 @@ public class SubmissionController {
     @Autowired
     private UserRepository userRepository;
 
+    private SubmissionRequest submissionRequest;
+
+    public SubmissionController(SubmissionService submissionService) {
+        this.submissionService = submissionService;
+    }
+
     // Submit code for a regular problem (no contest)
     @PostMapping("/problems/{problemId}/submissions")
     public ResponseEntity<Submission> submitProblemCode(
             @PathVariable Long problemId,
-            @RequestBody SubmissionRequestDTO dto,
+            @RequestBody SubmissionRequest dto,
             java.security.Principal principal) {
 
         if (principal == null) throw new UserNotAuthorizedException("submit code");
@@ -45,8 +51,9 @@ public class SubmissionController {
                 null,
                 user,
                 dto.getCode(),
-                Submission.Language.valueOf(dto.getLanguage().toUpperCase())
+                dto.getLanguage()
         );
+                
 
         return ResponseEntity.ok(submission);
     }
@@ -56,7 +63,7 @@ public class SubmissionController {
     public ResponseEntity<Submission> submitContestCode(
             @PathVariable Long contestId,
             @PathVariable Long problemId,
-            @RequestBody SubmissionRequestDTO dto,
+            @RequestBody SubmissionRequest dto,
             java.security.Principal principal) {
 
         if (principal == null) throw new UserNotAuthorizedException("submit code");
@@ -69,7 +76,7 @@ public class SubmissionController {
                 contestId,
                 user,
                 dto.getCode(),
-                Submission.Language.valueOf(dto.getLanguage().toUpperCase())
+                dto.getLanguage()
         );
 
         return ResponseEntity.ok(submission);
