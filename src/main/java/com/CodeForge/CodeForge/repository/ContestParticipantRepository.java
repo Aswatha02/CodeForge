@@ -28,4 +28,6 @@ public interface ContestParticipantRepository extends JpaRepository<ContestParti
 
     boolean existsByContestAndUser(Contest contest, User user);
 
+     long countByContestId(Long contestId);
+
 }

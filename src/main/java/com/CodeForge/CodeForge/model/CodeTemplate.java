@@ -82,6 +82,9 @@ public class CodeTemplate {
     public String getTemplateCode() { return templateCode; }
     public void setTemplateCode(String templateCode) { this.templateCode = templateCode; }
 
+    public String getTemplate() { return templateCode; }
+    public void setTemplate(String template) { this.templateCode = template; }
+
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 }

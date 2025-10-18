@@ -89,13 +89,7 @@ public class SubmissionService {
         }
 
         // Create submission - using constructor that sets code and language
-        Submission submission = new Submission();
-        submission.setUser(user);
-        submission.setProblem(problem);
-        submission.setCode(code);
-        submission.setLanguage(language);
-        submission.setStatus(Submission.Status.PENDING);
-        submission.setSubmittedAt(LocalDateTime.now());
+        Submission submission = new Submission(user, problem, code, language);
         
         submission = submissionRepository.save(submission);
 
@@ -201,10 +195,10 @@ public class SubmissionService {
             // Parse both outputs as JSON for flexible comparison
             JsonNode actualNode = objectMapper.readTree(actual.trim());
             JsonNode expectedNode = objectMapper.readTree(expected.trim());
-            
+
             return actualNode.equals(expectedNode);
-            
-        } catch (Exception e) {
+
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             // If JSON parsing fails, do string comparison (normalized)
             return normalizeOutput(actual).equals(normalizeOutput(expected));
         }
@@ -570,5 +564,65 @@ public class SubmissionService {
         return userSubmissions.stream()
                 .filter(submission -> problemIds.contains(submission.getProblem().getId()))
                 .collect(Collectors.toList());
+    }
+
+    public Long getTotalSubmissions() {
+        return submissionRepository.count();
+    }
+
+    public Long getUserSubmissionCount(Long userId) {
+        return (long) submissionRepository.findByUserId(userId).size();
+    }
+
+    public Long getProblemSubmissionCount(Long problemId) {
+        return (long) submissionRepository.findByProblemId(problemId).size();
+    }
+
+    public Long getProblemAcceptedSubmissionCount(Long problemId) {
+        return submissionRepository.countAcceptedSubmissionsByProblemId(problemId);
+    }
+
+    public List<Submission> getRecentSubmissions() {
+        return submissionRepository.findTop10ByOrderBySubmittedAtDesc();
+    }
+
+    public List<Submission> getSubmissionsWithFilters(String user, String problem, String status, String language) {
+        return submissionRepository.findAll().stream()
+                .filter(submission -> user == null || user.isEmpty() ||
+                        submission.getUser().getUsername().toLowerCase().contains(user.toLowerCase()))
+                .filter(submission -> problem == null || problem.isEmpty() ||
+                        submission.getProblem().getTitle().toLowerCase().contains(problem.toLowerCase()))
+                .filter(submission -> status == null || status.isEmpty() ||
+                        submission.getStatus().name().equalsIgnoreCase(status))
+                .filter(submission -> language == null || language.isEmpty() ||
+                        submission.getLanguage().name().equalsIgnoreCase(language))
+                .collect(Collectors.toList());
+    }
+
+    public String getSubmissionCode(Long submissionId) {
+        Submission submission = submissionRepository.findById(submissionId)
+                .orElseThrow(() -> new IllegalArgumentException("Submission not found"));
+        return submission.getCode();
+    }
+
+    public Submission rerunSubmission(Long submissionId) {
+        Submission submission = submissionRepository.findById(submissionId)
+                .orElseThrow(() -> new IllegalArgumentException("Submission not found"));
+
+        // Reset submission status
+        submission.setStatus(Submission.Status.PENDING);
+        submission.setErrorMessage(null);
+        submission.setActualOutput(null);
+        submission.setExpectedOutput(null);
+        submission.setPassedTestCases(0);
+        submission.setTotalTestCases(0);
+        submission.setExecutionTime(0);
+        submission.setMemoryUsed(0);
+
+        submission = submissionRepository.save(submission);
+
+        // Re-execute against test cases
+        List<TestCase> testCases = testCaseRepository.findByProblem(submission.getProblem());
+        return executeAgainstTestCases(submission, submission.getProblem(), testCases);
     }
 }

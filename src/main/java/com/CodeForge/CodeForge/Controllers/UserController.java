@@ -3,24 +3,32 @@ package com.CodeForge.CodeForge.Controllers;
 import com.CodeForge.CodeForge.model.User;
 import com.CodeForge.CodeForge.model.UserProgress;
 import com.CodeForge.CodeForge.services.UserService;
+import com.CodeForge.CodeForge.util.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/users")
-@CrossOrigin(origins = "http://localhost:3000")
+@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"})
 public class UserController {
-    
+
     private final UserService userService;
+    private final JwtUtil jwtUtil;
+    private final UserDetailsService userDetailsService;
 
     // Constructor injection
     @Autowired
-    public UserController(UserService userService) {
+    public UserController(UserService userService, JwtUtil jwtUtil, UserDetailsService userDetailsService) {
         this.userService = userService;
+        this.jwtUtil = jwtUtil;
+        this.userDetailsService = userDetailsService;
     }
 
     @PostMapping("/register")
@@ -38,23 +46,38 @@ public class UserController {
         try {
             String usernameOrEmail = loginRequest.get("usernameOrEmail");
             String password = loginRequest.get("password");
-            
+
             if (usernameOrEmail == null || usernameOrEmail.trim().isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Username or email is required"));
             }
-            
+
             if (password == null || password.trim().isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Password is required"));
             }
-            
+
             User user = userService.loginUser(usernameOrEmail, password);
-            return ResponseEntity.ok(user);
+
+            // Generate JWT token
+            UserDetails userDetails = userDetailsService.loadUserByUsername(user.getUsername());
+            String token = jwtUtil.generateToken(userDetails);
+
+            // Return user data with token
+            Map<String, Object> response = new HashMap<>();
+            response.put("user", user);
+            response.put("token", token);
+
+            return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
-    @GetMapping("/{userId}/progress")
+    @GetMapping("/login")
+    public ResponseEntity<?> loginGet() {
+        return ResponseEntity.status(405).body(Map.of("error", "Method not allowed. Use POST to login."));
+    }
+
+    @GetMapping("/{userId:\\d+}/progress")
     public ResponseEntity<?> getUserProgress(@PathVariable Long userId) {
         try {
             UserProgress progress = userService.getUserProgress(userId);
@@ -64,7 +87,7 @@ public class UserController {
         }
     }
 
-    @PutMapping("/{userId}/progress")
+    @PutMapping("/{userId:\\d+}/progress")
     public ResponseEntity<?> updateUserProgress(
             @PathVariable Long userId,
             @RequestBody UserProgress progress) {
@@ -83,7 +106,7 @@ public class UserController {
         return ResponseEntity.ok(users);
     }
 
-    @GetMapping("/{userId}")
+    @GetMapping("/{userId:\\d+}")
     public ResponseEntity<?> getUserById(@PathVariable Long userId) {
         try {
             User user = userService.getUserById(userId);
@@ -93,7 +116,7 @@ public class UserController {
         }
     }
 
-    @PutMapping("/{userId}")
+    @PutMapping("/{userId:\\d+}")
     public ResponseEntity<?> updateUser(@PathVariable Long userId, @RequestBody User user) {
         try {
             User updatedUser = userService.updateUser(userId, user);
@@ -103,7 +126,7 @@ public class UserController {
         }
     }
 
-    @DeleteMapping("/{userId}")
+    @DeleteMapping("/{userId:\\d+}")
     public ResponseEntity<?> deleteUser(@PathVariable Long userId) {
         try {
             userService.deleteUser(userId);

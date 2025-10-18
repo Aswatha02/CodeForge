@@ -4,8 +4,7 @@ import com.CodeForge.CodeForge.model.Category;
 import com.CodeForge.CodeForge.model.Problem;
 import com.CodeForge.CodeForge.services.CategoryService;
 import com.CodeForge.CodeForge.services.ProblemService;
-
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,12 +13,18 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/categories")
-@RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:3000")
+@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"}) // Fix CORS for both ports
 public class CategoryController {
     
     private final CategoryService categoryService;
     private final ProblemService problemService;
+
+    // Constructor injection instead of @RequiredArgsConstructor
+    @Autowired
+    public CategoryController(CategoryService categoryService, ProblemService problemService) {
+        this.categoryService = categoryService;
+        this.problemService = problemService;
+    }
 
     @PostMapping
     public ResponseEntity<?> createCategory(@RequestBody Category category) {

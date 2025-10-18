@@ -1,216 +1,198 @@
 package com.CodeForge.CodeForge.Controllers;
 
-import com.CodeForge.CodeForge.dto.ProblemResponseDTO;
 import com.CodeForge.CodeForge.dto.ProblemRequest;
+import com.CodeForge.CodeForge.dto.ProblemResponseDTO;
 import com.CodeForge.CodeForge.model.Problem;
-import com.CodeForge.CodeForge.model.Submission;
-import com.CodeForge.CodeForge.model.Category;
-import com.CodeForge.CodeForge.model.TestCase;
-import com.CodeForge.CodeForge.model.CodeTemplate;
+import com.CodeForge.CodeForge.model.User;
 import com.CodeForge.CodeForge.services.ProblemService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-
-import com.CodeForge.CodeForge.dto.SubmissionRequest;
-import com.CodeForge.CodeForge.services.SubmissionService;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.Optional;
 import java.util.stream.Collectors;
-
-import com.CodeForge.CodeForge.model.User;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
 @RestController
 @RequestMapping("/api/problems")
-@CrossOrigin(origins = "http://localhost:3000")
+@CrossOrigin(origins = "*")
 public class ProblemController {
-    
-    private final ProblemService problemService;
-    private final SubmissionService submissionService;
 
-    // Manual constructor since Lombok is not working
-    public ProblemController(ProblemService problemService, SubmissionService submissionService) {
-        this.problemService = problemService;
-        this.submissionService = submissionService;
-    }
-
-    @PostMapping
-    public ResponseEntity<?> createProblem(
-            @RequestBody ProblemRequest problemRequest,
-            @RequestParam Long creatorId) {
-        try {
-            System.out.println("=== CREATING PROBLEM ===");
-            System.out.println("Title: " + problemRequest.getTitle());
-            System.out.println("Code Templates: " + (problemRequest.getCodeTemplates() != null ? problemRequest.getCodeTemplates().size() : 0));
-            System.out.println("Test Cases: " + (problemRequest.getTestCases() != null ? problemRequest.getTestCases().size() : 0));
-
-            // Convert ProblemRequest to Problem entity
-            Problem problem = new Problem();
-            problem.setTitle(problemRequest.getTitle());
-            problem.setSlug(problemRequest.getSlug());
-            problem.setDescription(problemRequest.getDescription());
-            problem.setInputFormat(problemRequest.getInputFormat());
-            problem.setOutputFormat(problemRequest.getOutputFormat());
-            problem.setTimeLimitMs(problemRequest.getTimeLimitMs());
-            problem.setMemoryLimitMb(problemRequest.getMemoryLimitMb());
-            problem.setDifficulty(problemRequest.getDifficulty());
-
-            // Convert categories
-            if (problemRequest.getCategoryIds() != null) {
-                Set<Category> categories = problemRequest.getCategoryIds().stream()
-                    .map(id -> {
-                        Category cat = new Category();
-                        cat.setId(id);
-                        return cat;
-                    })
-                    .collect(Collectors.toSet());
-                problem.setCategories(categories);
-            }
-
-            // Convert test cases
-            if (problemRequest.getTestCases() != null) {
-                List<TestCase> testCases = problemRequest.getTestCases().stream()
-                    .map(tc -> {
-                        TestCase testCase = new TestCase();
-                        testCase.setInputData(tc.getInputData());
-                        testCase.setExpectedOutput(tc.getExpectedOutput());
-                        testCase.setIsSample(tc.getIsSample());
-                        testCase.setTestCaseName(tc.getTestCaseName());
-                        testCase.setExplanation(tc.getExplanation());
-                        return testCase;
-                    })
-                    .collect(Collectors.toList());
-                problem.setTestCases(testCases);
-            }
-
-            // Convert code templates
-            if (problemRequest.getCodeTemplates() != null) {
-                List<CodeTemplate> codeTemplates = problemRequest.getCodeTemplates().stream()
-                    .map(ct -> {
-                        CodeTemplate codeTemplate = new CodeTemplate();
-                        codeTemplate.setLanguage(CodeTemplate.Language.valueOf(ct.getLanguage()));
-                        codeTemplate.setTemplateCode(ct.getTemplateCode());
-                        return codeTemplate;
-                    })
-                    .collect(Collectors.toList());
-                problem.setCodeTemplates(codeTemplates);
-            }
-
-            Problem createdProblem = problemService.createProblem(problem, creatorId);
-            ProblemResponseDTO responseDTO = new ProblemResponseDTO(createdProblem);
-            return ResponseEntity.ok(responseDTO);
-        } catch (RuntimeException e) {
-            System.err.println("Error creating problem: " + e.getMessage());
-            e.printStackTrace();
-            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
-        }
-    }
+    @Autowired
+    private ProblemService problemService;
 
     @GetMapping
-    public ResponseEntity<?> getAllProblems() {
+    public ResponseEntity<List<ProblemResponseDTO>> getAllProblems() {
         try {
             List<Problem> problems = problemService.getAllProblems();
-            List<ProblemResponseDTO> responseDTOs = problems.stream()
+            List<ProblemResponseDTO> response = problems.stream()
                     .map(ProblemResponseDTO::new)
                     .collect(Collectors.toList());
-            return ResponseEntity.ok(responseDTOs);
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    @GetMapping("/search")
-    public ResponseEntity<?> searchProblems(
-            @RequestParam(required = false) String query,
-            @RequestParam(required = false) String difficulty,
-            @RequestParam(required = false) Long categoryId) {
-        try {
-            List<Problem> problems = problemService.searchProblems(query, difficulty, categoryId);
-            List<ProblemResponseDTO> responseDTOs = problems.stream()
-                    .map(ProblemResponseDTO::new)
-                    .collect(Collectors.toList());
-            return ResponseEntity.ok(responseDTOs);
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<?> getProblemById(@PathVariable Long id) {
+    public ResponseEntity<ProblemResponseDTO> getProblemById(@PathVariable Long id) {
         try {
-            System.out.println("=== GET PROBLEM BY ID CALLED ===");
-            System.out.println("Requested problem ID: " + id);
+            Optional<Problem> problemOpt = problemService.getProblemById(id);
             
-            Problem problem = problemService.getProblemById(id)
-                    .orElseThrow(() -> new RuntimeException("Problem not found"));
+            if (problemOpt.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
             
-            System.out.println("✅ PROBLEM FOUND: " + problem.getTitle());
-            System.out.println("Problem ID: " + problem.getId());
-            System.out.println("Problem Slug: " + problem.getSlug());
-            System.out.println("Problem Status: " + problem.getStatus());
+            Problem problem = problemOpt.get();
+            ProblemResponseDTO response = new ProblemResponseDTO(problem);
             
-            // Debug logging for associations
-            System.out.println("Categories count: " + (problem.getCategories() != null ? problem.getCategories().size() : 0));
-            System.out.println("Code templates count: " + (problem.getCodeTemplates() != null ? problem.getCodeTemplates().size() : 0));
-            System.out.println("Test cases count: " + (problem.getTestCases() != null ? problem.getTestCases().size() : 0));
-            
-            ProblemResponseDTO responseDTO = new ProblemResponseDTO(problem);
-            System.out.println("✅ DTO created successfully, returning response");
-            
-            return ResponseEntity.ok(responseDTO);
-        } catch (RuntimeException e) {
-            System.err.println("❌ ERROR in getProblemById: " + e.getMessage());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
             e.printStackTrace();
-            return ResponseEntity.status(500).body(Map.of("error", "Internal server error: " + e.getMessage()));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
     @GetMapping("/slug/{slug}")
-    public ResponseEntity<?> getProblemBySlug(@PathVariable String slug) {
+    public ResponseEntity<ProblemResponseDTO> getProblemBySlug(@PathVariable String slug) {
         try {
-            Problem problem = problemService.getProblemBySlug(slug)
-                    .orElseThrow(() -> new RuntimeException("Problem not found"));
-            ProblemResponseDTO responseDTO = new ProblemResponseDTO(problem);
-            return ResponseEntity.ok(responseDTO);
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+            Optional<Problem> problemOpt = problemService.getProblemBySlug(slug);
+            
+            if (problemOpt.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            return ResponseEntity.ok(new ProblemResponseDTO(problemOpt.get()));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
-    @PostMapping("/{id}/submit")
-    public ResponseEntity<?> submitSolution(
-            @PathVariable Long id,
-            @RequestBody SubmissionRequest submissionRequest,
+    @PostMapping("/admin")
+    public ResponseEntity<?> createProblem(
+            @RequestBody Problem problem,
             @AuthenticationPrincipal User user) {
+        
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "User not authenticated"));
+        }
+        
+        if (!User.Role.ADMIN.equals(user.getRole())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Admin access required"));
+        }
+        
         try {
-            Submission submission = submissionService.submitCode(
-                id, 
-                null,
-                user, 
-                submissionRequest.getCode(), 
-                submissionRequest.getLanguage()
-            );
-            return ResponseEntity.ok(submission);
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+            Problem createdProblem = problemService.createProblem(problem, user.getId());
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(new ProblemResponseDTO(createdProblem));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/admin/{id}")
+    public ResponseEntity<?> updateProblem(
+            @PathVariable Long id,
+            @RequestBody ProblemRequest problemRequest,
+            @AuthenticationPrincipal User user) {
+
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "User not authenticated"));
+        }
+
+        if (!User.Role.ADMIN.equals(user.getRole())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Admin access required"));
+        }
+
+        try {
+            Problem updatedProblem = problemService.updateProblem(id, problemRequest);
+            return ResponseEntity.ok(new ProblemResponseDTO(updatedProblem));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", e.getMessage()));
         }
     }
 
     @DeleteMapping("/admin/{id}")
-    public ResponseEntity<?> deleteProblem(@PathVariable Long id, @AuthenticationPrincipal User user) {
+    public ResponseEntity<?> deleteProblem(
+            @PathVariable Long id,
+            @AuthenticationPrincipal User user) {
+        
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "User not authenticated"));
+        }
+        
+        if (!User.Role.ADMIN.equals(user.getRole())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Admin access required"));
+        }
+        
         try {
-            // Check if user is admin
-            if (user.getRole() != User.Role.ADMIN) {
-                return ResponseEntity.status(403).body(Map.of("error", "Access denied"));
-            }
-
             problemService.deleteProblem(id, user.getId());
-            return ResponseEntity.ok().build();
-            
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+            return ResponseEntity.ok(Map.of("message", "Problem deleted successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/search")
+    public ResponseEntity<List<ProblemResponseDTO>> searchProblems(
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false) String difficulty,
+            @RequestParam(required = false) Long categoryId) {
+        
+        try {
+            List<Problem> problems = problemService.searchProblems(query, difficulty, categoryId);
+            List<ProblemResponseDTO> response = problems.stream()
+                    .map(ProblemResponseDTO::new)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/category/{categoryId}")
+    public ResponseEntity<List<ProblemResponseDTO>> getProblemsByCategory(@PathVariable Long categoryId) {
+        try {
+            List<Problem> problems = problemService.getProblemsByCategory(categoryId);
+            List<ProblemResponseDTO> response = problems.stream()
+                    .map(ProblemResponseDTO::new)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/difficulty/{difficulty}")
+    public ResponseEntity<List<ProblemResponseDTO>> getProblemsByDifficulty(@PathVariable String difficulty) {
+        try {
+            Problem.Difficulty diff = Problem.Difficulty.valueOf(difficulty.toUpperCase());
+            List<Problem> problems = problemService.getProblemsByDifficulty(diff);
+            List<ProblemResponseDTO> response = problems.stream()
+                    .map(ProblemResponseDTO::new)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 }

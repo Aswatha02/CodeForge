@@ -5,8 +5,8 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service; // Add this import
-import org.springframework.transaction.annotation.Transactional; // Add this import
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.CodeForge.CodeForge.Exception.ContestAlreadyRunningException;
 import com.CodeForge.CodeForge.Exception.ContestNotFoundException;
@@ -121,25 +121,6 @@ public class ContestService {
         
         Contest savedContest = contestRepository.save(clonedContest);
         
-        // Clone problems if needed
-        // Note: You'll need to implement getProblems() method in Contest entity
-        /*
-        if (original.getProblems() != null && !original.getProblems().isEmpty()) {
-            Set<Problem> clonedProblems = original.getProblems().stream()
-                .map(problem -> {
-                    Problem clonedProblem = new Problem();
-                    clonedProblem.setTitle(problem.getTitle());
-                    clonedProblem.setDescription(problem.getDescription());
-                    clonedProblem.setDifficulty(problem.getDifficulty());
-                    clonedProblem.setContest(savedContest);
-                    return contestProblemRepository.save(clonedProblem);
-                })
-                .collect(Collectors.toSet());
-                
-            savedContest.setProblems(clonedProblems);
-        }
-        */
-        
         return contestRepository.save(savedContest);
     }
 
@@ -159,19 +140,9 @@ public class ContestService {
             throw new IllegalStateException("Registration is closed for this contest");
         }
         
-        // Check if user is already registered
-        // You'll need to implement existsByContestAndUser method in repository
-        /*
-        if (contestParticipantRepository.existsByContestAndUser(contest, user)) {
-            throw new IllegalStateException("User is already registered for this contest");
-        }
-        */
-        
         ContestParticipant participant = new ContestParticipant();
         participant.setContest(contest);
         participant.setUser(user);
-        // You'll need to implement setRegistrationTime method in ContestParticipant
-        // participant.setRegistrationTime(LocalDateTime.now());
         
         contestParticipantRepository.save(participant);
     }
@@ -186,7 +157,6 @@ public class ContestService {
             throw new IllegalStateException("Cannot unregister from an active contest");
         }
         
-        // You'll need to implement findByContestAndUser method in repository
         ContestParticipant participant = contestParticipantRepository.findByContestAndUser(contest, user)
             .orElseThrow(() -> new ParticipantNotFoundException(contestId, userId));
             
@@ -194,7 +164,7 @@ public class ContestService {
     }
     
     public List<ContestParticipant> getRegisteredUsers(Long contestId) {
-        Contest contest = getContest(contestId); // throws ContestNotFoundException if not found
+        Contest contest = getContest(contestId);
         return contestParticipantRepository.findByContest(contest);
     }
     
@@ -203,12 +173,10 @@ public class ContestService {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new UserNotFoundException(userId));
             
-        
         return contestParticipantRepository.existsByContestAndUser(contest, user);
     }
 
     public ContestParticipant getUserRankInContest(Long contestId, Long userId) {
-        // Your implementation here
         Contest contest = getContest(contestId);
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new UserNotFoundException(userId));
@@ -220,56 +188,50 @@ public class ContestService {
     // 3. Contest Problem Management
     
     public void addProblemToContest(Long contestId, Long problemId, Integer points) {
-    Contest contest = getContest(contestId);
-    Problem problem = problemRepository.findById(problemId)
-        .orElseThrow(() -> new ProblemNotFoundException(problemId));
-    
-    if (contest.getStatus() != Contest.Status.UPCOMING) {
-        throw new IllegalStateException("Cannot add problems to a contest that has already started");
+        Contest contest = getContest(contestId);
+        Problem problem = problemRepository.findById(problemId)
+            .orElseThrow(() -> new ProblemNotFoundException(problemId));
+        
+        if (contest.getStatus() != Contest.Status.UPCOMING) {
+            throw new IllegalStateException("Cannot add problems to a contest that has already started");
+        }
+        
+        // Check if problem is already in contest
+        if (contestProblemRepository.existsByContestAndProblem(contest, problem)) {
+            throw new IllegalStateException("Problem is already in this contest");
+        }
+        
+        // Create ContestProblem with points
+        ContestProblem contestProblem = new ContestProblem();
+        contestProblem.setContest(contest);
+        contestProblem.setProblem(problem);
+        contestProblem.setPoints(points != null ? points : 100); // Default 100 points
+        
+        contestProblemRepository.save(contestProblem);
     }
-    
-    // Check if problem is already in contest
-    if (contestProblemRepository.existsByContestAndProblem(contest, problem)) {
-        throw new IllegalStateException("Problem is already in this contest");
-    }
-    
-    // Create ContestProblem with points
-    ContestProblem contestProblem = new ContestProblem();
-    contestProblem.setContest(contest);
-    contestProblem.setProblem(problem);
-    contestProblem.setPoints(points != null ? points : 100); // Default 100 points
-    
-    contestProblemRepository.save(contestProblem);
-}
-
     
     public void removeProblem(Long contestId, Long problemId) {
-    Contest contest = getContest(contestId);
-    
-    // Check if contest has already started
-    if (contest.getStatus() != Contest.Status.UPCOMING) {
-        throw new IllegalStateException("Cannot remove problems from a contest that has already started");
+        Contest contest = getContest(contestId);
+        
+        // Check if contest has already started
+        if (contest.getStatus() != Contest.Status.UPCOMING) {
+            throw new IllegalStateException("Cannot remove problems from a contest that has already started");
+        }
+        
+        Problem problem = problemRepository.findById(problemId)
+            .orElseThrow(() -> new ProblemNotFoundException(problemId));
+        
+        // Find the ContestProblem association
+        ContestProblem contestProblem = contestProblemRepository.findByContestAndProblem(contest, problem)
+            .orElseThrow(() -> new IllegalArgumentException("Problem does not belong to this contest"));
+        
+        // Delete the ContestProblem association (not the Problem itself)
+        contestProblemRepository.delete(contestProblem);
     }
-    
-    Problem problem = problemRepository.findById(problemId)
-        .orElseThrow(() -> new ProblemNotFoundException(problemId));
-    
-    // Find the ContestProblem association
-    ContestProblem contestProblem = contestProblemRepository.findByContestAndProblem(contest, problem)
-        .orElseThrow(() -> new IllegalArgumentException("Problem does not belong to this contest"));
-    
-    // Delete the ContestProblem association (not the Problem itself)
-    contestProblemRepository.delete(contestProblem);
-
-}
-    
-
     
     public List<ContestProblem> getContestProblems(Long contestId) {
         Contest contest = getContest(contestId);
-        // You'll need to implement findByContestOrderByOrderIndexAsc method in repository
-        // return contestProblemRepository.findByContestOrderByOrderIndexAsc(contest);
-       return contestProblemRepository.findByContest(contest); 
+        return contestProblemRepository.findByContest(contest); 
     }
 
     // 4. Contest Timing & State Management
@@ -297,9 +259,6 @@ public class ContestService {
         contest.setStatus(Contest.Status.COMPLETED);
         contest.setEndTime(LocalDateTime.now());
         contestRepository.save(contest);
-        
-        // Finalize leaderboard - you'll need to implement this method
-        // leaderboardService.finalizeLeaderboard(contestId);
     }
     
     public void extendContest(Long contestId, int minutesToAdd) {
@@ -333,30 +292,6 @@ public class ContestService {
 
     // 5. Leaderboard Services
     
-    // You'll need to create Leaderboard class
-    /*
-    public Leaderboard getLeaderboard(Long contestId) {
-        Contest contest = getContest(contestId);
-        
-        if (contest.getStatus() == Contest.Status.UPCOMING) {
-            throw new IllegalStateException("Leaderboard is not available for upcoming contests");
-        }
-        
-        return leaderboardService.getLeaderboard(contestId);
-    }
-    */
-    
-    public void updateLeaderboard(Long contestId) {
-        Contest contest = getContest(contestId);
-        
-        if (contest.getStatus() != Contest.Status.RUNNING) {
-            throw new IllegalStateException("Can only update leaderboard for active contests");
-        }
-        
-        // You'll need to implement updateLeaderboard method
-        // leaderboardService.updateLeaderboard(contestId);
-    }
-    
     public Integer getUserRank(Long contestId, Long userId) {
         Contest contest = getContest(contestId);
         User user = userRepository.findById(userId)
@@ -370,102 +305,8 @@ public class ContestService {
         // return leaderboardService.getUserRank(contestId, userId);
         return 0;
     }
-    
-    // You'll need to create LeaderboardEntry class
-    /*
-    public List<LeaderboardEntry> getScoreboard(Long contestId) {
-        Contest contest = getContest(contestId);
-        
-        if (contest.getStatus() == Contest.Status.UPCOMING) {
-            throw new IllegalStateException("Scoreboard is not available for upcoming contests");
-        }
-        
-        // You'll need to implement getScoreboard method
-        // return leaderboardService.getScoreboard(contestId);
-        return List.of();
-    }
-    */
 
     // 6. Contest Analytics
-    
-    // You'll need to create ContestStatistics and ProblemStatistics classes
-    /*
-    public ContestStatistics getContestStatistics(Long contestId) {
-        Contest contest = getContest(contestId);
-        
-        if (contest.getStatus() == Contest.Status.UPCOMING) {
-            throw new IllegalStateException("Statistics are not available for upcoming contests");
-        }
-        
-        ContestStatistics stats = new ContestStatistics();
-        
-        // Total participants
-        // You'll need to implement countByContest method in repository
-        // long totalParticipants = contestParticipantRepository.countByContest(contest);
-        long totalParticipants = contestParticipantRepository.countByContestId(contestId);
-        stats.setTotalParticipants(totalParticipants);
-        
-        return stats;
-    }
-    */
-    
-    // You'll need to create UserContestPerformance class
-    /*
-    public UserContestPerformance getUserPerformance(Long contestId, Long userId) {
-        Contest contest = getContest(contestId);
-        User user = userRepository.findById(userId)
-            .orElseThrow(() -> new UserNotFoundException(userId));
-            
-        if (contest.getStatus() == Contest.Status.UPCOMING) {
-            throw new IllegalStateException("Performance data is not available for upcoming contests");
-        }
-        
-        UserContestPerformance performance = new UserContestPerformance();
-        
-        // Get user's rank
-        Integer rank = getUserRank(contestId, userId);
-        performance.setRank(rank);
-        
-        return performance;
-    }
-    */
-    
-    // You'll need to create ProblemStatistics class
-    /*
-    public ProblemStatistics getProblemStatistics(Long contestId, Long problemId) {
-        Contest contest = getContest(contestId);
-        Problem problem = contestProblemRepository.findById(problemId)
-            .orElseThrow(() -> new ProblemNotFoundException(problemId));
-            
-        if (!problem.getContest().getId().equals(contestId)) {
-            throw new IllegalArgumentException("Problem does not belong to this contest");
-        }
-        
-        if (contest.getStatus() == Contest.Status.UPCOMING) {
-            throw new IllegalStateException("Problem statistics are not available for upcoming contests");
-        }
-        
-        ProblemStatistics stats = new ProblemStatistics();
-        stats.setProblemId(problemId);
-        // You'll need to implement getTitle method in Problem
-        // stats.setProblemTitle(problem.getTitle());
-        
-        // You'll need to implement countByContest method in repository
-        // long totalParticipants = contestParticipantRepository.countByContest(contest);
-        long totalParticipants = contestParticipantRepository.countByContestId(contestId);
-        long solvedCount = 0; // Query for number of users who solved this problem
-        
-        stats.setSolvedCount(solvedCount);
-        
-        if (totalParticipants > 0) {
-            stats.setSuccessRate((double) solvedCount / totalParticipants * 100);
-        } else {
-            stats.setSuccessRate(0.0);
-        }
-        
-        return stats;
-    }
-    */
     
     public String exportContestData(Long contestId, ExportFormat format) {
         Contest contest = getContest(contestId);
@@ -510,23 +351,19 @@ public class ContestService {
         boolean isRegistered = checkRegistration(contestId, userId);
         
         // Check if contest is active or ended (users can view ended contests)
-        // You'll need to implement isAdmin() method in User and isPublic() method in Contest
-        boolean isAccessible = contest.getStatus() != Contest.Status.UPCOMING || 
-                              // user.isAdmin() || 
-                              // contest.isPublic();
-                              true; // Temporary fix
+        boolean isAccessible = contest.getStatus() != Contest.Status.UPCOMING;
         
         return isRegistered && isAccessible;
     }
 
     public Contest getActiveContest(Long contestId) {
-    Contest contest = contestRepository.findById(contestId)
-            .orElseThrow(() -> new IllegalArgumentException("Contest not found"));
-    if (!contest.getStatus().equals(Contest.Status.RUNNING)) {
-        throw new IllegalStateException("Contest is not running");
+        Contest contest = contestRepository.findById(contestId)
+                .orElseThrow(() -> new IllegalArgumentException("Contest not found"));
+        if (!contest.getStatus().equals(Contest.Status.RUNNING)) {
+            throw new IllegalStateException("Contest is not running");
+        }
+        return contest;
     }
-    return contest;
-}
     
     public boolean checkContestConstraints(Long contestId, Submission submission) {
         Contest contest = getContest(contestId);
@@ -544,35 +381,25 @@ public class ContestService {
         
         // Check if problem belongs to contest
         Problem problem = submission.getProblem();
-        /*
-        if (!problem.getContest().getId().equals(contestId)) {
-            return false;
-        }
-        */
-
-       if(!contestProblemRepository.existsByContestAndProblem(contest, problem))
-       {
-            return false;
-       }
         
-        // Check language constraints if any
-        // You'll need to implement getAllowedLanguages() method in Contest
-        /*
-        if (contest.getAllowedLanguages() != null && 
-            !contest.getAllowedLanguages().isEmpty() &&
-            !contest.getAllowedLanguages().contains(submission.getLanguage())) {
+        if(!contestProblemRepository.existsByContestAndProblem(contest, problem)) {
             return false;
         }
-        */
         
         return true;
     }
+
+    // FIXED: Use Contest.Status.RUNNING instead of Status.ACTIVE
+    public long getActiveContestsCount() {
+        return contestRepository.countByStatus(Contest.Status.RUNNING);
+    }
+    
+    public long getParticipantCount(Long contestId) {
+        return contestParticipantRepository.countByContestId(contestId);
+    }
 }
 
-// Enums and supporting classes
-
+// Move ExportFormat enum to its own file or make it a static inner class
 enum ExportFormat {
     CSV, JSON, EXCEL
 }
-
-    

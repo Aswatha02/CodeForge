@@ -28,21 +28,31 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, 
-                                  HttpServletResponse response, 
-                                  FilterChain filterChain) throws ServletException, IOException {
+                                HttpServletResponse response, 
+                                FilterChain filterChain) throws ServletException, IOException {
         
         try {
             String jwt = getJwtFromRequest(request);
             
+            System.out.println("=== JWT FILTER DEBUG ===");
+            System.out.println("Request URI: " + request.getRequestURI());
+            System.out.println("JWT Present: " + (jwt != null));
+            
             if (StringUtils.hasText(jwt) && jwtUtil.validateToken(jwt)) {
                 String username = jwtUtil.extractUsername(jwt);
+                System.out.println("Username from JWT: " + username);
                 
                 UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+                System.out.println("User Authorities: " + userDetails.getAuthorities());
+                
                 UsernamePasswordAuthenticationToken authentication = 
                     new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+                System.out.println("Authentication set successfully");
+            } else {
+                System.out.println("JWT validation failed or no JWT");
             }
         } catch (Exception ex) {
             logger.error("Could not set user authentication in security context", ex);

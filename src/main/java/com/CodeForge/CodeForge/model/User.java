@@ -6,14 +6,11 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import lombok.Data;
-import lombok.ToString;
-
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-@Data
+
 @Entity
 @Table(name = "users")
 public class User {
@@ -43,17 +40,14 @@ public class User {
     private Role role = Role.USER;
 
     @JsonIgnore
-    @ToString.Exclude
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private UserProgress userProgress;
 
     @JsonIgnore
-    @ToString.Exclude
     @OneToMany(mappedBy = "creator", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<Problem> createdProblems = new ArrayList<>();
 
     @JsonIgnore
-    @ToString.Exclude
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<Submission> submissions = new ArrayList<>();
 

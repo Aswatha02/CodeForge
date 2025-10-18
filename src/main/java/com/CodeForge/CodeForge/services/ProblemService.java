@@ -1,37 +1,32 @@
 package com.CodeForge.CodeForge.services;
 
 import com.CodeForge.CodeForge.model.*;
+import com.CodeForge.CodeForge.model.Problem.Difficulty;
 import com.CodeForge.CodeForge.repository.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
 import java.util.Optional;
-import java.util.ArrayList;
+import java.util.stream.Collectors;
+import java.util.HashSet;
 
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
+import com.CodeForge.CodeForge.dto.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.Data;
-import com.fasterxml.jackson.databind.JsonNode;
 
-@Data
 @Service
 public class ProblemService {
 
     private final ProblemRepository problemRepository;
-    private final CategoryRepository categoryRepository;
     private final TestCaseRepository testCaseRepository;
     private final CodeTemplateRepository codeTemplateRepository;
     private final UserRepository userRepository;
     private final SubmissionRepository submissionRepository;
     private final ContestProblemRepository contestProblemRepository;
     private final UserProgressRepository userProgressRepository;
+    private final CategoryRepository categoryRepository;
 
-    @PersistenceContext
-    private EntityManager entityManager;
-
-    // Manually created constructor for dependency injection
     public ProblemService(
             ProblemRepository problemRepository,
             CategoryRepository categoryRepository,
@@ -43,13 +38,13 @@ public class ProblemService {
             UserProgressRepository userProgressRepository
     ) {
         this.problemRepository = problemRepository;
-        this.categoryRepository = categoryRepository;
         this.testCaseRepository = testCaseRepository;
         this.codeTemplateRepository = codeTemplateRepository;
         this.userRepository = userRepository;
         this.submissionRepository = submissionRepository;
         this.contestProblemRepository = contestProblemRepository;
         this.userProgressRepository = userProgressRepository;
+        this.categoryRepository = categoryRepository;
     }
 
     @Transactional
@@ -63,10 +58,8 @@ public class ProblemService {
         
         problem.setCreator(creator);
         
-        // Save problem first
         Problem savedProblem = problemRepository.save(problem);
         
-        // Save code templates
         if (problem.getCodeTemplates() != null && !problem.getCodeTemplates().isEmpty()) {
             for (CodeTemplate codeTemplate : problem.getCodeTemplates()) {
                 codeTemplate.setProblem(savedProblem);
@@ -74,14 +67,10 @@ public class ProblemService {
             }
         }
         
-        // Save test cases
         if (problem.getTestCases() != null && !problem.getTestCases().isEmpty()) {
             for (TestCase testCase : problem.getTestCases()) {
                 testCase.setProblem(savedProblem);
-                
-                // Validate test case JSON format
                 validateTestCaseFormat(testCase.getInputData(), testCase.getExpectedOutput());
-                
                 testCaseRepository.save(testCase);
             }
         }
@@ -92,33 +81,38 @@ public class ProblemService {
     private void validateTestCaseFormat(String inputData, String expectedOutput) {
         try {
             ObjectMapper mapper = new ObjectMapper();
-            
-            // Validate input is proper JSON
-            JsonNode inputNode = mapper.readTree(inputData);
-            
-            // Validate expected output format
-            JsonNode outputNode = mapper.readTree(expectedOutput);
-            
+            mapper.readTree(inputData);
+            mapper.readTree(expectedOutput);
         } catch (Exception e) {
             throw new RuntimeException("Invalid test case format: " + e.getMessage());
         }
     }
 
+    @Transactional(readOnly = true)
     public List<Problem> getAllProblems() {
-        return problemRepository.findAllActive();
+        List<Problem> problems = problemRepository.findAllActiveWithDetails();
+        
+        // Force initialization of lazy collections within transaction
+        problems.forEach(problem -> {
+            problem.getCodeTemplates().size();
+            problem.getTestCases().size();
+            problem.getCategories().size();
+        });
+        
+        return problems;
     }
 
+    @Transactional(readOnly = true)
     public Optional<Problem> getProblemById(Long id) {
-        Optional<Problem> problemOpt = problemRepository.findById(id);
+        Optional<Problem> problemOpt = problemRepository.findByIdWithDetails(id);
         
         if (problemOpt.isPresent()) {
             Problem problem = problemOpt.get();
             
-            List<CodeTemplate> codeTemplates = codeTemplateRepository.findByProblem(problem);
-            problem.setCodeTemplates(codeTemplates);
-            
-            List<TestCase> testCases = testCaseRepository.findByProblem(problem);
-            problem.setTestCases(testCases);
+            // Force initialization of collections
+            problem.getCodeTemplates().size();
+            problem.getTestCases().size();
+            problem.getCategories().size();
             
             return Optional.of(problem);
         }
@@ -126,14 +120,17 @@ public class ProblemService {
         return Optional.empty();
     }
 
+    @Transactional(readOnly = true)
     public Optional<Problem> getProblemBySlug(String slug) {
-        Optional<Problem> problemOpt = problemRepository.findBySlug(slug);
+        Optional<Problem> problemOpt = problemRepository.findBySlugWithDetails(slug);
         
         if (problemOpt.isPresent()) {
             Problem problem = problemOpt.get();
             
-            List<CodeTemplate> codeTemplates = codeTemplateRepository.findByProblem(problem);
-            problem.setCodeTemplates(codeTemplates);
+            // Force initialization of collections
+            problem.getCodeTemplates().size();
+            problem.getTestCases().size();
+            problem.getCategories().size();
             
             return Optional.of(problem);
         }
@@ -141,10 +138,12 @@ public class ProblemService {
         return Optional.empty();
     }
 
+    @Transactional(readOnly = true)
     public List<Problem> getProblemsByCategory(Long categoryId) {
         return problemRepository.findByCategoryId(categoryId);
     }
 
+    @Transactional(readOnly = true)
     public List<Problem> getProblemsByDifficulty(Problem.Difficulty difficulty) {
         return problemRepository.findByDifficulty(difficulty);
     }
@@ -157,7 +156,7 @@ public class ProblemService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         
-        if (!existingProblem.getCreator().getId().equals(userId) && !user.getRole().equals("ADMIN")) {
+        if (!existingProblem.getCreator().getId().equals(userId) && user.getRole() != User.Role.ADMIN) {
             throw new RuntimeException("Not authorized to update this problem");
         }
         
@@ -199,29 +198,34 @@ public class ProblemService {
         Problem problem = problemRepository.findById(problemId)
                 .orElseThrow(() -> new RuntimeException("Problem not found"));
 
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        // If userId is null, it's an admin override - skip authorization check
+        if (userId != null) {
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
 
-        if (!problem.getCreator().getId().equals(userId) && user.getRole() != User.Role.ADMIN) {
-            throw new RuntimeException("Not authorized to delete this problem");
+            if (!problem.getCreator().getId().equals(userId) && user.getRole() != User.Role.ADMIN) {
+                throw new RuntimeException("Not authorized to delete this problem");
+            }
         }
 
-        // Delete related entities first to avoid foreign key constraint violations
-
-        // Delete submissions related to this problem
+        // Delete related entities first
         submissionRepository.deleteByProblemId(problemId);
-
-        // Delete contest problems related to this problem
         contestProblemRepository.deleteByProblem(problem);
 
-        // Delete code templates and test cases
+        // Delete user progress entries
+        userProgressRepository.deleteById(problemId);
+
         codeTemplateRepository.deleteByProblemId(problemId);
         testCaseRepository.deleteByProblemId(problemId);
 
-        // Finally delete the problem
         problemRepository.delete(problem);
     }
 
+    public void deleteProblem(Long problemId) {
+        deleteProblem(problemId, null); // Call with null userId for admin override
+    }
+
+    @Transactional(readOnly = true)
     public List<Problem> searchProblems(String query, String difficulty, Long categoryId) {
         List<Problem> allProblems = getAllProblems();
         
@@ -236,5 +240,125 @@ public class ProblemService {
                      problem.getCategories().stream().anyMatch(cat -> cat.getId().equals(categoryId)))
                 )
                 .toList();
+    }
+
+    public Long getTotalProblems() {
+        return problemRepository.count();
+    }
+
+    public Long getProblemCountByCategory(Long categoryId) {
+        // Simple implementation - count problems that have this category
+        List<Problem> problems = getProblemsByCategory(categoryId);
+        return (long) problems.size();
+    }
+
+    // Simplified method for admin dashboard filtering - removed status filter
+    public List<Problem> getProblemsWithFilters(String difficulty, String category) {
+        // Handle empty strings as null
+        if (difficulty != null && difficulty.trim().isEmpty()) {
+            difficulty = null;
+        }
+        if (category != null && category.trim().isEmpty()) {
+            category = null;
+        }
+
+        // Your existing filtering logic, but now it checks multiple categories
+        if (difficulty != null && category != null) {
+            return problemRepository.findByDifficultyAndCategoriesName(
+                Difficulty.valueOf(difficulty.toUpperCase()), category);
+        } else if (difficulty != null) {
+            return problemRepository.findByDifficulty(Difficulty.valueOf(difficulty.toUpperCase()));
+        } else if (category != null) {
+            return problemRepository.findByCategoriesNameContainingIgnoreCase(category);
+        } else {
+            return problemRepository.findAll();
+        }
+    }
+
+    public void addCategoriesToProblem(Long problemId, List<Long> categoryIds) {
+        Problem problem = problemRepository.findById(problemId)
+            .orElseThrow(() -> new RuntimeException("Problem not found"));
+        
+        Set<Category> categories = categoryRepository.findAllById(categoryIds)
+            .stream()
+            .collect(Collectors.toSet());
+        
+        problem.getCategories().addAll(categories);
+        problemRepository.save(problem);
+    }
+
+    public void removeCategoriesFromProblem(Long problemId, List<Long> categoryIds) {
+        Problem problem = problemRepository.findById(problemId)
+            .orElseThrow(() -> new RuntimeException("Problem not found"));
+
+        problem.getCategories().removeIf(category ->
+            categoryIds.contains(category.getId()));
+
+        problemRepository.save(problem);
+    }
+
+    @Transactional
+    public Problem updateProblem(Long problemId, ProblemRequest problemRequest) {
+        Problem existingProblem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new RuntimeException("Problem not found"));
+
+        // Update basic fields
+        existingProblem.setTitle(problemRequest.getTitle());
+        existingProblem.setSlug(problemRequest.getSlug());
+        existingProblem.setDescription(problemRequest.getDescription());
+        existingProblem.setInputFormat(problemRequest.getInputFormat());
+        existingProblem.setOutputFormat(problemRequest.getOutputFormat());
+        existingProblem.setDifficulty(problemRequest.getDifficulty());
+        existingProblem.setTimeLimitMs(problemRequest.getTimeLimitMs());
+        existingProblem.setMemoryLimitMb(problemRequest.getMemoryLimitMb());
+
+        // Update categories if provided
+        if (problemRequest.getCategoryIds() != null && !problemRequest.getCategoryIds().isEmpty()) {
+            Set<Category> categories = new HashSet<>();
+            for (Long categoryId : problemRequest.getCategoryIds()) {
+                Category category = categoryRepository.findById(categoryId).orElse(null);
+                if (category != null) {
+                    categories.add(category);
+                }
+            }
+            existingProblem.setCategories(categories);
+        }
+
+        // Update test cases if provided
+        if (problemRequest.getTestCases() != null && !problemRequest.getTestCases().isEmpty()) {
+            testCaseRepository.deleteByProblemId(problemId);
+            for (TestCaseRequest tcRequest : problemRequest.getTestCases()) {
+                TestCase testCase = new TestCase();
+                testCase.setInputData(tcRequest.getInputData());
+                testCase.setExpectedOutput(tcRequest.getExpectedOutput());
+                testCase.setIsSample(tcRequest.getIsSample() != null ? tcRequest.getIsSample() : false);
+                testCase.setExplanation(tcRequest.getExplanation());
+                testCase.setTestCaseName(tcRequest.getTestCaseName());
+                testCase.setProblem(existingProblem);
+                testCaseRepository.save(testCase);
+            }
+        }
+
+        // Update code templates if provided
+        if (problemRequest.getCodeTemplates() != null && !problemRequest.getCodeTemplates().isEmpty()) {
+            codeTemplateRepository.deleteByProblemId(problemId);
+            for (CodeTemplateRequest ctRequest : problemRequest.getCodeTemplates()) {
+                CodeTemplate codeTemplate = new CodeTemplate();
+                codeTemplate.setLanguage(CodeTemplate.Language.valueOf(ctRequest.getLanguage().toUpperCase()));
+                codeTemplate.setTemplateCode(ctRequest.getTemplateCode());
+                codeTemplate.setProblem(existingProblem);
+                codeTemplateRepository.save(codeTemplate);
+            }
+        }
+
+        return problemRepository.save(existingProblem);
+    }
+
+    @Transactional
+    public void updateProblemStatus(Long problemId, boolean published) {
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new RuntimeException("Problem not found"));
+        problem.setStatus(published ? Problem.Status.ACTIVE : Problem.Status.INACTIVE);
+        problemRepository.save(problem);
     }
 }

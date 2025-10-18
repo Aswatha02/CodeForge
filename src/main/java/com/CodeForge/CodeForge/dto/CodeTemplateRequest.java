@@ -11,6 +11,15 @@ public class CodeTemplateRequest {
     private String templateCode;
 
     // Manual getters since Lombok is not working
+    public String getTemplate() {
+        return templateCode;
+    }
+
+    public void setTemplate(String template) {
+        this.templateCode = template;
+    }
+
+    // Manual getters since Lombok is not working
     public String getLanguage() {
         return language;
     }

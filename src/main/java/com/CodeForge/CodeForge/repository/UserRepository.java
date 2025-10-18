@@ -22,4 +22,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
     
     @Query("SELECT u FROM User u LEFT JOIN FETCH u.userProgress WHERE u.id = :id")
     Optional<User> findByIdWithProgress(@Param("id") Long id);
+
+    
+
+    
 }

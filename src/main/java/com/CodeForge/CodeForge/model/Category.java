@@ -3,7 +3,6 @@ package com.CodeForge.CodeForge.model;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
-import lombok.ToString;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -12,7 +11,7 @@ import java.util.List;
 @Entity
 @Table(name = "categories")
 public class Category {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -24,8 +23,10 @@ public class Category {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Column(name = "color", nullable = true)
+    private String color;
+
     @JsonIgnore
-    @ToString.Exclude
     @ManyToMany(mappedBy = "categories", fetch = FetchType.LAZY)
     private List<Problem> problems = new ArrayList<>();
 
@@ -63,6 +64,14 @@ public class Category {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getColor() {
+        return this.color;
+    }
+
+    public void setColor(String color) {
+        this.color = color;
     }
 
     public List<Problem> getProblems() {
@@ -121,6 +130,7 @@ public class Category {
                 "id=" + id +
                 ", name='" + name + '\'' +
                 ", description='" + description + '\'' +
+                ", color='" + color + '\'' +
                 ", createdAt=" + createdAt +
                 ", updatedAt=" + updatedAt +
                 '}';

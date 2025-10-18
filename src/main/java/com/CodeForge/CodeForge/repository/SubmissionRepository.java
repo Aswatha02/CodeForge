@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.data.jpa.repository.Modifying;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -43,4 +44,12 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     @Modifying
     @Query("DELETE FROM Submission s WHERE s.problem.id = :problemId")
     void deleteByProblemId(@Param("problemId") Long problemId);
+
+    @Query("SELECT COUNT(DISTINCT s.user.id) FROM Submission s WHERE s.submittedAt >= :since")
+    Long countDistinctUsersSince(@Param("since") LocalDateTime since);
+
+    @Query("SELECT COUNT(s) FROM Submission s WHERE s.problem.id = :problemId AND s.status = 'ACCEPTED'")
+    Long countAcceptedSubmissionsByProblemId(@Param("problemId") Long problemId);
+
+    List<Submission> findTop10ByOrderBySubmittedAtDesc();
 }

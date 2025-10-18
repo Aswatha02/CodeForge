@@ -1,11 +1,11 @@
 package com.CodeForge.CodeForge.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import lombok.Data;
-import lombok.ToString;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -13,7 +13,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-@Data
 @Entity
 @Table(name = "problems")
 public class Problem {
@@ -76,13 +75,10 @@ public class Problem {
     private Status status = Status.ACTIVE;
 
     @JsonIgnore
-    @ToString.Exclude
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "creator_id", nullable = false)
     private User creator;
 
-    @JsonIgnore
-    @ToString.Exclude
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
         name = "problem_categories",
@@ -91,18 +87,15 @@ public class Problem {
     )
     private Set<Category> categories = new HashSet<>();
 
-    @JsonIgnore
-    @ToString.Exclude
-    @OneToMany(mappedBy = "problem", fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "problem", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @JsonManagedReference
     private List<CodeTemplate> codeTemplates = new ArrayList<>();
 
-    @JsonIgnore
-    @ToString.Exclude
-    @OneToMany(mappedBy = "problem", fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "problem", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @JsonManagedReference
     private List<TestCase> testCases = new ArrayList<>();
 
     @JsonIgnore
-    @ToString.Exclude
     @OneToMany(mappedBy = "problem", fetch = FetchType.LAZY)
     private List<Submission> submissions = new ArrayList<>();
 
