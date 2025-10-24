@@ -40,6 +40,24 @@ public class ProblemRequest {
     @NotNull(message = "At least one code template is required")
     private List<CodeTemplateRequest> codeTemplates;
 
+    // NEW: Additional fields from user requirements
+    private String constraints;
+    private Integer points = 100;
+    private String tags;
+    private String exampleInput;
+    private String exampleOutput;
+    private Boolean isPrivate = false;
+
+    // Function signature fields
+    @NotBlank(message = "Function name is required")
+    private String functionName = "solve";
+
+    @NotBlank(message = "Parameters are required")
+    private String parameters = "[{\"name\": \"input\", \"type\": \"any\"}]";
+
+    @NotBlank(message = "Return type is required")
+    private String returnType = "any";
+
     // Manual getters since Lombok is not working
     public String getTitle() {
         return title;
@@ -127,5 +145,77 @@ public class ProblemRequest {
 
     public void setCodeTemplates(List<CodeTemplateRequest> codeTemplates) {
         this.codeTemplates = codeTemplates;
+    }
+
+    public String getConstraints() {
+        return constraints;
+    }
+
+    public void setConstraints(String constraints) {
+        this.constraints = constraints;
+    }
+
+    public Integer getPoints() {
+        return points;
+    }
+
+    public void setPoints(Integer points) {
+        this.points = points;
+    }
+
+    public String getTags() {
+        return tags;
+    }
+
+    public void setTags(String tags) {
+        this.tags = tags;
+    }
+
+    public String getExampleInput() {
+        return exampleInput;
+    }
+
+    public void setExampleInput(String exampleInput) {
+        this.exampleInput = exampleInput;
+    }
+
+    public String getExampleOutput() {
+        return exampleOutput;
+    }
+
+    public void setExampleOutput(String exampleOutput) {
+        this.exampleOutput = exampleOutput;
+    }
+
+    public Boolean getIsPrivate() {
+        return isPrivate;
+    }
+
+    public void setIsPrivate(Boolean isPrivate) {
+        this.isPrivate = isPrivate;
+    }
+
+    public String getFunctionName() {
+        return functionName;
+    }
+
+    public void setFunctionName(String functionName) {
+        this.functionName = functionName;
+    }
+
+    public String getParameters() {
+        return parameters;
+    }
+
+    public void setParameters(String parameters) {
+        this.parameters = parameters;
+    }
+
+    public String getReturnType() {
+        return returnType;
+    }
+
+    public void setReturnType(String returnType) {
+        this.returnType = returnType;
     }
 }

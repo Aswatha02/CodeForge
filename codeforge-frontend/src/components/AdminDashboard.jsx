@@ -1,5 +1,10 @@
 import { useState, useEffect } from "react"
+
 import { adminAPI } from "../services/api"
+import ProblemDetailsTab from "./ProblemDetailsTab"
+import TestCasesTab from "./TestCasesTab"
+import CodeTemplatesTab from "./CodeTemplatesTab"
+import ProblemValidationTab from "./ProblemValidationTab"
 
 export default function AdminDashboard({ onLogout }) {
   const [stats, setStats] = useState({
@@ -10,7 +15,7 @@ export default function AdminDashboard({ onLogout }) {
     systemUptime: "99.9%",
     dailyActiveUsers: 0
   })
-  
+
   const [recentActivity, setRecentActivity] = useState([])
   const [activeTab, setActiveTab] = useState("dashboard")
   const [loading, setLoading] = useState(false)
@@ -18,9 +23,32 @@ export default function AdminDashboard({ onLogout }) {
 
   // User Management State
   const [users, setUsers] = useState([])
+  const [userStats, setUserStats] = useState({
+    totalUsers: 0,
+    activeUsers: 0,
+    bannedUsers: 0,
+    newUsersThisWeek: 0,
+    newUsersThisMonth: 0,
+    userGrowthData: []
+  })
   const [userFilters, setUserFilters] = useState({
     search: "",
-    role: ""
+    role: "",
+    status: "",
+    sortBy: "createdAt",
+    sortOrder: "desc",
+    page: 0,
+    size: 20
+  })
+  const [totalUsers, setTotalUsers] = useState(0)
+  const [selectedUser, setSelectedUser] = useState(null)
+  const [showUserProfile, setShowUserProfile] = useState(false)
+  const [showEditUser, setShowEditUser] = useState(false)
+  const [editUserData, setEditUserData] = useState({
+    email: "",
+    role: "",
+    status: "",
+    password: ""
   })
 
   // Problem Management State
@@ -33,6 +61,14 @@ export default function AdminDashboard({ onLogout }) {
 
   // Contest Management State
   const [contests, setContests] = useState([])
+  const [showContestModal, setShowContestModal] = useState(false)
+  const [contestFormData, setContestFormData] = useState({
+    title: "",
+    description: "",
+    startTime: "",
+    endTime: "",
+    problemIds: []
+  })
 
   // Submission Management State
   const [submissions, setSubmissions] = useState([])
@@ -46,6 +82,7 @@ export default function AdminDashboard({ onLogout }) {
   // Category Management State
   const [categories, setCategories] = useState([])
   const [newCategory, setNewCategory] = useState({ name: "", description: "", color: "#3b82f6" })
+  const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false)
 
   // Problem Edit State
   const [editingProblem, setEditingProblem] = useState(null)
@@ -66,9 +103,11 @@ export default function AdminDashboard({ onLogout }) {
     categoryIds: []
   })
 
-  // Problem Create State
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [createFormData, setCreateFormData] = useState({
+  // Problem Create/Edit State with Tabbed Interface
+  const [showProblemModal, setShowProblemModal] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [activeProblemTab, setActiveProblemTab] = useState("details")
+  const [problemFormData, setProblemFormData] = useState({
     title: "",
     slug: "",
     description: "",
@@ -82,32 +121,60 @@ export default function AdminDashboard({ onLogout }) {
     returnType: "",
     status: "DRAFT",
     categoryIds: [],
-    supportedLanguages: ["JAVA", "PYTHON", "JAVASCRIPT"],
+    supportedLanguages: ["JAVA", "PYTHON", "JAVASCRIPT", "C", "CPP"],
+    testCases: [],
     codeTemplates: {
-      JAVA: `public class Solution {
+      JAVA: {
+        visibleCode: `public class Solution {
     public {RETURN_TYPE} {FUNCTION_NAME}({PARAMETERS}) {
         // Write your code here
-        
+
     }
 }`,
-      PYTHON: `class Solution:
+        hiddenCode: ""
+      },
+      PYTHON: {
+        visibleCode: `class Solution:
     def {FUNCTION_NAME}(self{PARAMETERS}) -> {RETURN_TYPE}:
         # Write your code here
         pass`,
-      JAVASCRIPT: `/**
- * @param {PARAMETERS} 
+        hiddenCode: ""
+      },
+      JAVASCRIPT: {
+        visibleCode: `/**
+ * @param {PARAMETERS}
  * @return {RETURN_TYPE}
  */
 var {FUNCTION_NAME} = function({PARAMETERS}) {
     // Write your code here
-    
-};`
+
+};`,
+        hiddenCode: ""
+      }
     }
   })
 
+  // Test API connectivity
+  const testAPI = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      console.log('Current token:', token)
+      
+      const response = await adminAPI.getStats()
+      console.log('API response:', response)
+      setError("API test successful! Check console for details.")
+    } catch (error) {
+      console.error('API test failed:', error)
+      console.log('Error details:', error.response?.data)
+      setError(`API test failed: ${error.message}. Check console for details.`)
+    }
+  }
+
   useEffect(() => {
     const userRole = localStorage.getItem("userRole")
-    if (userRole !== "admin") {
+    const token = localStorage.getItem("token")
+    
+    if (userRole !== "admin" || !token) {
       window.location.href = "/"
       return
     }
@@ -120,16 +187,29 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
     try {
       const [statsResponse, activityResponse] = await Promise.all([
         adminAPI.getStats(),
-        adminAPI.get('/admin/activity')
+        adminAPI.getActivity()
       ])
-      
+
       setStats(statsResponse.data)
       setRecentActivity(activityResponse.data)
 
     } catch (error) {
       console.error("Error fetching dashboard data:", error)
-      setError("Failed to load dashboard data. Please check your authentication and try again.")
-      // Set empty stats instead of fallback data
+      
+      // Check if it's an authentication error
+      if (error.response?.status === 403) {
+        setError("Access denied. Please check if you have admin privileges.")
+      } else if (error.response?.status === 401) {
+        setError("Authentication failed. Please log in again.")
+        // Redirect to login
+        localStorage.removeItem("token")
+        localStorage.removeItem("userRole")
+        window.location.href = "/login"
+      } else {
+        setError("Failed to load dashboard data. Please try again later.")
+      }
+      
+      // Set empty stats
       setStats({
         totalProblems: 0,
         totalUsers: 0,
@@ -138,6 +218,7 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
         systemUptime: "N/A",
         dailyActiveUsers: 0
       })
+      setRecentActivity([])
     }
     setLoading(false)
   }
@@ -148,9 +229,52 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
     try {
       const response = await adminAPI.getUsers(userFilters)
       setUsers(response.data)
+      // Assuming the API returns total count in headers or response
+      // For now, we'll use the length of returned data
+      setTotalUsers(response.data.length)
     } catch (error) {
       console.error("Error fetching users:", error)
-      setError("Failed to load users")
+      if (error.response?.status === 403) {
+        setError("You don't have permission to view users.")
+      } else {
+        setError("Failed to load users")
+      }
+      setUsers([])
+    }
+    setLoading(false)
+  }
+
+  const fetchUserStats = async () => {
+    setLoading(true)
+    setError("")
+    try {
+      const response = await adminAPI.getUserStats()
+      setUserStats(response.data)
+    } catch (error) {
+      console.error("Error fetching user stats:", error)
+      if (error.response?.status === 403) {
+        setError("You don't have permission to view user statistics.")
+      } else {
+        setError("Failed to load user statistics")
+      }
+    }
+    setLoading(false)
+  }
+
+  const fetchUserProfile = async (userId) => {
+    setLoading(true)
+    setError("")
+    try {
+      const response = await adminAPI.getUserProfile(userId)
+      setSelectedUser(response.data)
+      setShowUserProfile(true)
+    } catch (error) {
+      console.error("Error fetching user profile:", error)
+      if (error.response?.status === 403) {
+        setError("You don't have permission to view user profiles.")
+      } else {
+        setError("Failed to load user profile")
+      }
     }
     setLoading(false)
   }
@@ -163,7 +287,12 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
       setProblems(response.data)
     } catch (error) {
       console.error("Error fetching problems:", error)
-      setError("Failed to load problems")
+      if (error.response?.status === 403) {
+        setError("You don't have permission to view problems.")
+      } else {
+        setError("Failed to load problems")
+      }
+      setProblems([])
     }
     setLoading(false)
   }
@@ -176,7 +305,12 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
       setSubmissions(response.data)
     } catch (error) {
       console.error("Error fetching submissions:", error)
-      setError("Failed to load submissions")
+      if (error.response?.status === 403) {
+        setError("You don't have permission to view submissions.")
+      } else {
+        setError("Failed to load submissions")
+      }
+      setSubmissions([])
     }
     setLoading(false)
   }
@@ -189,7 +323,12 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
       setCategories(response.data)
     } catch (error) {
       console.error("Error fetching categories:", error)
-      setError("Failed to load categories")
+      if (error.response?.status === 403) {
+        setError("You don't have permission to view categories.")
+      } else {
+        setError("Failed to load categories")
+      }
+      setCategories([])
     }
     setLoading(false)
   }
@@ -202,7 +341,12 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
       setContests(response.data)
     } catch (error) {
       console.error("Error fetching contests:", error)
-      setError("Failed to load contests")
+      if (error.response?.status === 403) {
+        setError("You don't have permission to view contests.")
+      } else {
+        setError("Failed to load contests")
+      }
+      setContests([])
     }
     setLoading(false)
   }
@@ -212,31 +356,41 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
       setError("Category name is required")
       return
     }
-    
+
     setLoading(true)
     setError("")
     try {
       const response = await adminAPI.createCategory(newCategory)
       setCategories([...categories, response.data])
       setNewCategory({ name: "", description: "", color: "#3b82f6" })
+      setShowCreateCategoryModal(false)
     } catch (error) {
       console.error("Error creating category:", error)
-      setError("Failed to create category")
+      if (error.response?.status === 403) {
+        setError("You don't have permission to create categories.")
+      } else {
+        setError("Failed to create category")
+      }
     }
     setLoading(false)
   }
 
   const handleDeleteUser = async (userId) => {
-    if (!confirm("Are you sure you want to delete this user?")) return
-    
+    if (!confirm("Are you sure you want to delete this user? This action cannot be undone.")) return
+
     setLoading(true)
     setError("")
     try {
       await adminAPI.deleteUser(userId)
       setUsers(users.filter(user => user.id !== userId))
+      setTotalUsers(totalUsers - 1)
     } catch (error) {
       console.error("Error deleting user:", error)
-      setError("Failed to delete user")
+      if (error.response?.status === 403) {
+        setError("You don't have permission to delete users.")
+      } else {
+        setError("Failed to delete user")
+      }
     }
     setLoading(false)
   }
@@ -246,12 +400,94 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
     setError("")
     try {
       await adminAPI.updateUserRole(userId, newRole)
-      setUsers(users.map(user => 
+      setUsers(users.map(user =>
         user.id === userId ? { ...user, role: newRole } : user
       ))
     } catch (error) {
       console.error("Error changing user role:", error)
-      setError("Failed to update user role")
+      if (error.response?.status === 403) {
+        setError("You don't have permission to change user roles.")
+      } else {
+        setError("Failed to update user role")
+      }
+    }
+    setLoading(false)
+  }
+
+  const handleUpdateUserStatus = async (userId, newStatus) => {
+    setLoading(true)
+    setError("")
+    try {
+      await adminAPI.updateUserStatus(userId, { status: newStatus })
+      setUsers(users.map(user =>
+        user.id === userId ? { ...user, status: newStatus } : user
+      ))
+    } catch (error) {
+      console.error("Error updating user status:", error)
+      if (error.response?.status === 403) {
+        setError("You don't have permission to update user status.")
+      } else {
+        setError("Failed to update user status")
+      }
+    }
+    setLoading(false)
+  }
+
+  const handleResetUserProgress = async (userId) => {
+    if (!confirm("Are you sure you want to reset this user's progress? This will delete all their submissions and reset their statistics.")) return
+
+    setLoading(true)
+    setError("")
+    try {
+      await adminAPI.resetUserProgress(userId)
+      // Refresh user data
+      fetchUsers()
+    } catch (error) {
+      console.error("Error resetting user progress:", error)
+      if (error.response?.status === 403) {
+        setError("You don't have permission to reset user progress.")
+      } else {
+        setError("Failed to reset user progress")
+      }
+    }
+    setLoading(false)
+  }
+
+  const handleEditUser = (user) => {
+    setEditUserData({
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      password: ""
+    })
+    setSelectedUser(user)
+    setShowEditUser(true)
+  }
+
+  const handleSaveUserEdit = async () => {
+    if (!selectedUser) return
+
+    setLoading(true)
+    setError("")
+    try {
+      await adminAPI.updateUserDetails(selectedUser.id, editUserData)
+      setUsers(users.map(user =>
+        user.id === selectedUser.id ? {
+          ...user,
+          email: editUserData.email,
+          role: editUserData.role,
+          status: editUserData.status
+        } : user
+      ))
+      setShowEditUser(false)
+      setSelectedUser(null)
+    } catch (error) {
+      console.error("Error updating user:", error)
+      if (error.response?.status === 403) {
+        setError("You don't have permission to update user details.")
+      } else {
+        setError("Failed to update user details")
+      }
     }
     setLoading(false)
   }
@@ -264,7 +500,11 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
       fetchSubmissions()
     } catch (error) {
       console.error("Error rerunning submission:", error)
-      setError("Failed to rerun submission")
+      if (error.response?.status === 403) {
+        setError("You don't have permission to rerun submissions.")
+      } else {
+        setError("Failed to rerun submission")
+      }
     }
     setLoading(false)
   }
@@ -301,36 +541,102 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
       fetchProblems() // Refresh the problems list
     } catch (error) {
       console.error("Error updating problem:", error)
-      setError("Failed to update problem")
+      if (error.response?.status === 403) {
+        setError("You don't have permission to update problems.")
+      } else {
+        setError("Failed to update problem")
+      }
     }
     setLoading(false)
   }
 
   const handleDeleteProblem = async (problemId) => {
-    if (!confirm("Are you sure you want to delete this problem?")) return
+    console.log("=== DELETE PROBLEM DEBUG ===")
+    console.log("Problem ID received:", problemId)
+    console.log("Type of problemId:", typeof problemId)
+
+    // Find the specific problem we're trying to delete
+    const problemToDelete = problems.find(p => p.id === problemId)
+    console.log("Problem to delete:", problemToDelete)
+
+    if (!problemId) {
+      setError("Invalid problem ID")
+      return
+    }
+
+    if (!confirm(`Are you sure you want to delete problem "${problemToDelete?.title}"? This action cannot be undone.`)) {
+      return
+    }
 
     setLoading(true)
     setError("")
+
     try {
-      await adminAPI.deleteProblem(problemId)
-      fetchProblems() // Refresh the problems list
+      console.log("Making API call with problemId:", problemId)
+
+      // Ensure problemId is a number
+      const idToSend = Number(problemId)
+      if (isNaN(idToSend)) {
+        throw new Error("Invalid problem ID format")
+      }
+
+      console.log("ID being sent to API:", idToSend)
+
+      await adminAPI.deleteProblem(idToSend)
+
+      // Immediately remove from local state for better UX
+      setProblems(problems.filter(p => p.id !== problemId))
+
+      // Show success message
+      setError(`Problem "${problemToDelete?.title}" deleted successfully`)
+
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setError("")
+      }, 3000)
+
     } catch (error) {
-      console.error("Error deleting problem:", error)
-      setError("Failed to delete problem")
+      console.error("Full error object:", error)
+      console.log("Error config:", error.config)
+
+      let errorMessage = "Failed to delete problem"
+
+      if (error.response) {
+        console.log("Error response data:", error.response.data)
+        console.log("Error response status:", error.response.status)
+
+        // Extract error message from response
+        if (error.response.data?.message) {
+          errorMessage = error.response.data.message
+        } else if (typeof error.response.data === 'string') {
+          errorMessage = error.response.data
+        } else if (error.response.status === 403) {
+          errorMessage = "You don't have permission to delete this problem"
+        } else if (error.response.status === 404) {
+          errorMessage = "Problem not found"
+        } else {
+          errorMessage = `Server error: ${error.response.status}`
+        }
+      } else if (error.message) {
+        errorMessage = error.message
+      }
+
+      setError(errorMessage)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   const handleCreateProblem = async () => {
-    if (!createFormData.title.trim()) {
+    if (!problemFormData.title.trim()) {
       setError("Problem title is required")
       return
     }
-    if (!createFormData.slug.trim()) {
+    if (!problemFormData.slug.trim()) {
       setError("Problem slug is required")
       return
     }
-    if (!createFormData.description.trim()) {
+    if (!problemFormData.description.trim()) {
       setError("Problem description is required")
       return
     }
@@ -338,9 +644,19 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
     setLoading(true)
     setError("")
     try {
-      await adminAPI.createProblem(createFormData)
-      setShowCreateModal(false)
-      setCreateFormData({
+      // Transform codeTemplates object to array format for backend
+      const transformedData = {
+        ...problemFormData,
+        codeTemplates: Object.entries(problemFormData.codeTemplates).map(([language, template]) => ({
+          language,
+          visibleCode: template.visibleCode,
+          hiddenCode: template.hiddenCode
+        }))
+      }
+
+      await adminAPI.createProblem(transformedData)
+      setShowProblemModal(false)
+      setProblemFormData({
         title: "",
         slug: "",
         description: "",
@@ -353,19 +669,123 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
         parameters: "",
         returnType: "",
         status: "DRAFT",
-        categoryIds: []
+        categoryIds: [],
+    supportedLanguages: ["JAVA", "PYTHON", "JAVASCRIPT", "CPP", "C"],
+    testCases: [],
+    codeTemplates: {
+      JAVA: {
+        visibleCode: `public class Solution {
+    public {RETURN_TYPE} {FUNCTION_NAME}({PARAMETERS}) {
+        // Write your code here
+
+    }
+}`,
+        hiddenCode: ""
+      },
+      PYTHON: {
+        visibleCode: `class Solution:
+    def {FUNCTION_NAME}(self{PARAMETERS}) -> {RETURN_TYPE}:
+        # Write your code here
+        pass`,
+        hiddenCode: ""
+      },
+      JAVASCRIPT: {
+        visibleCode: `/**
+ * @param {PARAMETERS}
+ * @return {RETURN_TYPE}
+ */
+var {FUNCTION_NAME} = function({PARAMETERS}) {
+    // Write your code here
+
+};`,
+        hiddenCode: ""
+      },
+      CPP: {
+        visibleCode: `class Solution {
+public:
+    {RETURN_TYPE} {FUNCTION_NAME}({PARAMETERS}) {
+        // Write your code here
+
+    }
+};`,
+        hiddenCode: ""
+      },
+      C: {
+        visibleCode: `{RETURN_TYPE} {FUNCTION_NAME}({PARAMETERS}) {
+    // Write your code here
+
+}`,
+        hiddenCode: ""
+      }
+    }
       })
       fetchProblems() // Refresh the problems list
     } catch (error) {
       console.error("Error creating problem:", error)
-      setError("Failed to create problem")
+      if (error.response?.status === 403) {
+        setError("You don't have permission to create problems.")
+      } else {
+        setError("Failed to create problem")
+      }
+    }
+    setLoading(false)
+  }
+
+  const handleCreateContest = async () => {
+    if (!contestFormData.title.trim()) {
+      setError("Contest title is required")
+      return
+    }
+    if (!contestFormData.description.trim()) {
+      setError("Contest description is required")
+      return
+    }
+    if (!contestFormData.startTime) {
+      setError("Start time is required")
+      return
+    }
+    if (!contestFormData.endTime) {
+      setError("End time is required")
+      return
+    }
+    if (contestFormData.problemIds.length === 0) {
+      setError("At least one problem must be selected")
+      return
+    }
+
+    setLoading(true)
+    setError("")
+    try {
+      await adminAPI.createContest(contestFormData)
+      setShowContestModal(false)
+      setContestFormData({
+        title: "",
+        description: "",
+        startTime: "",
+        endTime: "",
+        problemIds: []
+      })
+      fetchContests() // Refresh the contests list
+    } catch (error) {
+      console.error("Error creating contest:", error)
+      if (error.response?.status === 403) {
+        setError("You don't have permission to create contests.")
+      } else {
+        setError("Failed to create contest")
+      }
     }
     setLoading(false)
   }
 
   useEffect(() => {
-    if (activeTab === "users") fetchUsers()
-    if (activeTab === "problems") fetchProblems()
+    if (activeTab === "users") {
+      fetchUsers()
+      fetchUserStats()
+    }
+    if (activeTab === "problems") {
+      fetchProblems()
+      fetchCategories() // Categories needed for problem creation and filtering
+    }
     if (activeTab === "submissions") fetchSubmissions()
     if (activeTab === "categories") fetchCategories()
     if (activeTab === "contests") fetchContests()
@@ -375,6 +795,12 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
     error && (
       <div className="bg-red-500/20 border border-red-500 text-red-400 px-4 py-3 rounded-md mb-4">
         {error}
+        <button 
+          onClick={testAPI}
+          className="ml-4 bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm"
+        >
+          Test API
+        </button>
       </div>
     )
   )
@@ -471,7 +897,7 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
           {activeTab === "dashboard" && !loading && (
             <div>
               <h2 className="text-3xl font-bold text-text mb-8">Admin Dashboard</h2>
-              
+
               {/* Stats Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                 <StatCard
@@ -574,28 +1000,82 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
                 </button>
               </div>
 
+              {/* User Statistics */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                <StatCard
+                  title="Total Users"
+                  value={userStats.totalUsers}
+                  color="bg-blue-500/20 text-blue-400"
+                  icon="👥"
+                />
+                <StatCard
+                  title="Active Users"
+                  value={userStats.activeUsers}
+                  color="bg-green-500/20 text-green-400"
+                  icon="✅"
+                />
+                <StatCard
+                  title="Banned Users"
+                  value={userStats.bannedUsers}
+                  color="bg-red-500/20 text-red-400"
+                  icon="🚫"
+                />
+                <StatCard
+                  title="New This Week"
+                  value={userStats.newUsersThisWeek}
+                  color="bg-purple-500/20 text-purple-400"
+                  icon="📈"
+                />
+              </div>
+
               {/* Filters */}
               <div className="bg-surface rounded-lg p-6 border border-border mb-6">
-                <h3 className="text-lg font-bold text-text mb-4">Filters</h3>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <h3 className="text-lg font-bold text-text mb-4">Filters & Search</h3>
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                   <input
                     type="text"
-                    placeholder="Search users..."
+                    placeholder="Search by username, email, or ID..."
                     value={userFilters.search}
                     onChange={(e) => setUserFilters({...userFilters, search: e.target.value})}
-                    className="px-3 py-2 rounded-md"
+                    className="px-3 py-2 rounded-md bg-surface-light border border-border"
                   />
                   <select
                     value={userFilters.role}
                     onChange={(e) => setUserFilters({...userFilters, role: e.target.value})}
-                    className="px-3 py-2 rounded-md"
+                    className="px-3 py-2 rounded-md bg-surface-light border border-border"
                   >
                     <option value="">All Roles</option>
                     <option value="USER">User</option>
                     <option value="ADMIN">Admin</option>
                     <option value="PROBLEM_SETTER">Problem Setter</option>
                   </select>
-
+                  <select
+                    value={userFilters.status}
+                    onChange={(e) => setUserFilters({...userFilters, status: e.target.value})}
+                    className="px-3 py-2 rounded-md bg-surface-light border border-border"
+                  >
+                    <option value="">All Status</option>
+                    <option value="ACTIVE">Active</option>
+                    <option value="INACTIVE">Inactive</option>
+                    <option value="BANNED">Banned</option>
+                  </select>
+                  <select
+                    value={userFilters.sortBy}
+                    onChange={(e) => setUserFilters({...userFilters, sortBy: e.target.value})}
+                    className="px-3 py-2 rounded-md bg-surface-light border border-border"
+                  >
+                    <option value="createdAt">Join Date</option>
+                    <option value="username">Username</option>
+                    <option value="lastLogin">Last Login</option>
+                  </select>
+                  <select
+                    value={userFilters.sortOrder}
+                    onChange={(e) => setUserFilters({...userFilters, sortOrder: e.target.value})}
+                    className="px-3 py-2 rounded-md bg-surface-light border border-border"
+                  >
+                    <option value="desc">Descending</option>
+                    <option value="asc">Ascending</option>
+                  </select>
                   <button
                     onClick={fetchUsers}
                     className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md"
@@ -610,10 +1090,12 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
                 <table className="w-full">
                   <thead className="bg-surface-dark border-b border-border">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">User</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Username</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Email</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Role</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Submissions</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Status</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Join Date</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Last Login</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
@@ -621,11 +1103,14 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
                     {users.map((user) => (
                       <tr key={user.id} className="hover:bg-surface-light transition-colors">
                         <td className="px-6 py-4">
-                          <div>
-                            <div className="font-medium text-text">{user.username}</div>
-                            <div className="text-text-muted text-sm">{user.email}</div>
-                          </div>
+                          <button
+                            onClick={() => fetchUserProfile(user.id)}
+                            className="text-primary hover:text-primary-dark font-medium"
+                          >
+                            {user.username}
+                          </button>
                         </td>
+                        <td className="px-6 py-4 text-text-muted">{user.email}</td>
                         <td className="px-6 py-4">
                           <select
                             value={user.role}
@@ -637,18 +1122,73 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
                             <option value="PROBLEM_SETTER">Problem Setter</option>
                           </select>
                         </td>
-                        <td className="px-6 py-4 text-text">{user.submissionCount}</td>
+                        <td className="px-6 py-4">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                            user.status === 'ACTIVE' ? 'bg-green-500/20 text-green-400' :
+                            user.status === 'INACTIVE' ? 'bg-yellow-500/20 text-yellow-400' :
+                            'bg-red-500/20 text-red-400'
+                          }`}>
+                            {user.status}
+                          </span>
+                        </td>
                         <td className="px-6 py-4 text-text-muted">{user.joinDate}</td>
+                        <td className="px-6 py-4 text-text-muted">{user.lastLogin}</td>
                         <td className="px-6 py-4">
                           <div className="flex space-x-2">
-                            <button className="text-blue-400 hover:text-blue-300">Edit</button>
-                            <button className="text-red-400 hover:text-red-300" onClick={() => handleDeleteUser(user.id)}>Delete</button>
+                            <button
+                              className="text-blue-400 hover:text-blue-300 text-sm"
+                              onClick={() => handleEditUser(user)}
+                            >
+                              Edit
+                            </button>
+
+                            <button
+                              className={`text-sm ${user.status === 'BANNED' ? 'text-green-400 hover:text-green-300' : 'text-red-400 hover:text-red-300'}`}
+                              onClick={() => handleUpdateUserStatus(user.id, user.status === 'BANNED' ? 'ACTIVE' : 'BANNED')}
+                            >
+                              {user.status === 'BANNED' ? 'Unban' : 'Ban'}
+                            </button>
+                            <button
+                              className="text-orange-400 hover:text-orange-300 text-sm"
+                              onClick={() => handleResetUserProgress(user.id)}
+                            >
+                              Reset Progress
+                            </button>
+                            <button
+                              className="text-red-400 hover:text-red-300 text-sm"
+                              onClick={() => handleDeleteUser(user.id)}
+                            >
+                              Delete
+                            </button>
                           </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Pagination */}
+              <div className="flex justify-between items-center mt-6">
+                <div className="text-text-muted">
+                  Showing {users.length} of {totalUsers} users
+                </div>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => setUserFilters({...userFilters, page: Math.max(0, userFilters.page - 1)})}
+                    disabled={userFilters.page === 0}
+                    className="px-4 py-2 bg-surface border border-border rounded-md disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setUserFilters({...userFilters, page: userFilters.page + 1})}
+                    disabled={users.length < userFilters.size}
+                    className="px-4 py-2 bg-surface border border-border rounded-md disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -658,7 +1198,57 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
             <div>
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-3xl font-bold text-text">Problem Management</h2>
-                <button onClick={() => setShowCreateModal(true)} className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md">
+                <button onClick={() => {
+                  setIsEditing(false)
+                  setActiveProblemTab("details")
+                  setProblemFormData({
+                    title: "",
+                    slug: "",
+                    description: "",
+                    inputFormat: "",
+                    outputFormat: "",
+                    difficulty: "EASY",
+                    timeLimitMs: "",
+                    memoryLimitMb: "",
+                    functionName: "",
+                    parameters: "",
+                    returnType: "",
+                    status: "DRAFT",
+                    categoryIds: [],
+                    supportedLanguages: ["JAVA", "PYTHON", "JAVASCRIPT"],
+                    testCases: [],
+                    codeTemplates: {
+                      JAVA: {
+                        visibleCode: `public class Solution {
+    public {RETURN_TYPE} {FUNCTION_NAME}({PARAMETERS}) {
+        // Write your code here
+
+    }
+}`,
+                        hiddenCode: ""
+                      },
+                      PYTHON: {
+                        visibleCode: `class Solution:
+    def {FUNCTION_NAME}(self{PARAMETERS}) -> {RETURN_TYPE}:
+        # Write your code here
+        pass`,
+                        hiddenCode: ""
+                      },
+                      JAVASCRIPT: {
+                        visibleCode: `/**
+ * @param {PARAMETERS}
+ * @return {RETURN_TYPE}
+ */
+var {FUNCTION_NAME} = function({PARAMETERS}) {
+    // Write your code here
+
+};`,
+                        hiddenCode: ""
+                      }
+                    }
+                  })
+                  setShowProblemModal(true)
+                }} className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md">
                   Create New Problem
                 </button>
               </div>
@@ -746,17 +1336,17 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-text">{problem.submissionCount}</td>
-                        <td className="px-6 py-4 text-text">{problem.acceptanceRate}</td>
+                        <td className="px-6 py-4 text-text">{problem.acceptanceRate}%</td>
                         <td className="px-6 py-4">
                           <div className="flex space-x-2">
                             <button
-                              className="text-blue-400 hover:text-blue-300"
+                              className="text-blue-400 hover:text-blue-300 text-sm"
                               onClick={() => handleEditProblem(problem)}
                             >
                               Edit
                             </button>
                             <button
-                              className="text-red-400 hover:text-red-300"
+                              className="text-red-400 hover:text-red-300 text-sm"
                               onClick={() => handleDeleteProblem(problem.id)}
                             >
                               Delete
@@ -776,62 +1366,106 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
             <div>
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-3xl font-bold text-text">Category Management</h2>
+                <button onClick={() => setShowCreateCategoryModal(true)} className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md">
+                  Create New Category
+                </button>
               </div>
 
-              {/* Add Category Form */}
-              <div className="bg-surface rounded-lg p-6 border border-border mb-6">
-                <h3 className="text-lg font-bold text-text mb-4">Add New Category</h3>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <input
-                    type="text"
-                    placeholder="Category Name"
-                    value={newCategory.name}
-                    onChange={(e) => setNewCategory({...newCategory, name: e.target.value})}
-                    className="px-3 py-2 rounded-md"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Description"
-                    value={newCategory.description}
-                    onChange={(e) => setNewCategory({...newCategory, description: e.target.value})}
-                    className="px-3 py-2 rounded-md"
-                  />
-                  <input
-                    type="color"
-                    value={newCategory.color}
-                    onChange={(e) => setNewCategory({...newCategory, color: e.target.value})}
-                    className="px-3 py-2 rounded-md h-10"
-                  />
-                  <button
-                    onClick={handleCreateCategory}
-                    className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md"
-                  >
-                    Add Category
-                  </button>
-                </div>
+              {/* Categories List */}
+              <div className="bg-surface rounded-lg border border-border overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-surface-dark border-b border-border">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Name</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Description</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Color</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Problems</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {categories.map((category) => (
+                      <tr key={category.id} className="hover:bg-surface-light transition-colors">
+                        <td className="px-6 py-4 font-medium text-text">{category.name}</td>
+                        <td className="px-6 py-4 text-text-muted">{category.description}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center">
+                            <div className="w-4 h-4 rounded-full mr-2" style={{backgroundColor: category.color}}></div>
+                            {category.color}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-text">{category.problemCount}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex space-x-2">
+                            <button className="text-blue-400 hover:text-blue-300 text-sm">
+                              Edit
+                            </button>
+                            <button className="text-red-400 hover:text-red-300 text-sm">
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Contest Management */}
+          {activeTab === "contests" && !loading && (
+            <div>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-3xl font-bold text-text">Contest Management</h2>
+                <button onClick={() => setShowContestModal(true)} className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md">
+                  Create New Contest
+                </button>
               </div>
 
-              {/* Categories Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {categories.map((category) => (
-                  <div key={category.id} className="bg-surface rounded-lg p-6 border border-border hover:border-primary/50 transition-colors">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-xl font-bold text-text">{category.name}</h3>
-                      <div 
-                        className="w-6 h-6 rounded-full"
-                        style={{ backgroundColor: category.color }}
-                      ></div>
-                    </div>
-                    <p className="text-text-muted mb-4">{category.description}</p>
-                    <div className="flex justify-between items-center">
-                      <span className="text-text">{category.problemCount} problems</span>
-                      <div className="flex space-x-2">
-                        <button className="text-blue-400 hover:text-blue-300 text-sm">Edit</button>
-                        <button className="text-red-400 hover:text-red-300 text-sm">Delete</button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+              {/* Contests List */}
+              <div className="bg-surface rounded-lg border border-border overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-surface-dark border-b border-border">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Title</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Start Time</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">End Time</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Participants</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {contests.map((contest) => (
+                      <tr key={contest.id} className="hover:bg-surface-light transition-colors">
+                        <td className="px-6 py-4 font-medium text-text">{contest.title}</td>
+                        <td className="px-6 py-4 text-text-muted">{contest.startTime}</td>
+                        <td className="px-6 py-4 text-text-muted">{contest.endTime}</td>
+                        <td className="px-6 py-4">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                            contest.status === 'UPCOMING' ? 'bg-blue-500/20 text-blue-400' :
+                            contest.status === 'RUNNING' ? 'bg-green-500/20 text-green-400' :
+                            'bg-gray-500/20 text-gray-400'
+                          }`}>
+                            {contest.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-text">{contest.participantCount}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex space-x-2">
+                            <button className="text-blue-400 hover:text-blue-300 text-sm">
+                              Edit
+                            </button>
+                            <button className="text-red-400 hover:text-red-300 text-sm">
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
@@ -839,7 +1473,12 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
           {/* Submission Management */}
           {activeTab === "submissions" && !loading && (
             <div>
-              <h2 className="text-3xl font-bold text-text mb-6">Submission Management</h2>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-3xl font-bold text-text">Submission Management</h2>
+                <button className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md">
+                  Export Submissions
+                </button>
+              </div>
 
               {/* Submission Filters */}
               <div className="bg-surface rounded-lg p-6 border border-border mb-6">
@@ -868,14 +1507,20 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
                     <option value="ACCEPTED">Accepted</option>
                     <option value="WRONG_ANSWER">Wrong Answer</option>
                     <option value="TIME_LIMIT_EXCEEDED">Time Limit Exceeded</option>
+                    <option value="MEMORY_LIMIT_EXCEEDED">Memory Limit Exceeded</option>
+                    <option value="RUNTIME_ERROR">Runtime Error</option>
                     <option value="COMPILATION_ERROR">Compilation Error</option>
                   </select>
-                  <button
-                    onClick={fetchSubmissions}
-                    className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md"
+                  <select
+                    value={submissionFilters.language}
+                    onChange={(e) => setSubmissionFilters({...submissionFilters, language: e.target.value})}
+                    className="px-3 py-2 rounded-md"
                   >
-                    Apply Filters
-                  </button>
+                    <option value="">All Languages</option>
+                    <option value="JAVA">Java</option>
+                    <option value="PYTHON">Python</option>
+                    <option value="JAVASCRIPT">JavaScript</option>
+                  </select>
                 </div>
               </div>
 
@@ -884,12 +1529,12 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
                 <table className="w-full">
                   <thead className="bg-surface-dark border-b border-border">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">ID</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">User</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Problem</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Language</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Language</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Time</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Memory</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Submitted At</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Actions</th>
                     </tr>
@@ -897,30 +1542,31 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
                   <tbody className="divide-y divide-border">
                     {submissions.map((submission) => (
                       <tr key={submission.id} className="hover:bg-surface-light transition-colors">
-                        <td className="px-6 py-4 text-text-muted">#{submission.id}</td>
-                        <td className="px-6 py-4 text-text">{submission.user}</td>
+                        <td className="px-6 py-4 font-medium text-text">{submission.user}</td>
                         <td className="px-6 py-4 text-text">{submission.problem}</td>
-                        <td className="px-6 py-4 text-text-muted">{submission.language}</td>
                         <td className="px-6 py-4">
                           <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                             submission.status === 'ACCEPTED' ? 'bg-green-500/20 text-green-400' :
                             submission.status === 'WRONG_ANSWER' ? 'bg-red-500/20 text-red-400' :
-                            submission.status === 'TIME_LIMIT_EXCEEDED' ? 'bg-orange-500/20 text-orange-400' :
-                            'bg-yellow-500/20 text-yellow-400'
+                            submission.status === 'TIME_LIMIT_EXCEEDED' ? 'bg-yellow-500/20 text-yellow-400' :
+                            submission.status === 'MEMORY_LIMIT_EXCEEDED' ? 'bg-orange-500/20 text-orange-400' :
+                            submission.status === 'RUNTIME_ERROR' ? 'bg-purple-500/20 text-purple-400' :
+                            'bg-gray-500/20 text-gray-400'
                           }`}>
-                            {submission.status.replace('_', ' ')}
+                            {submission.status}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-text-muted">{submission.executionTime}</td>
+                        <td className="px-6 py-4 text-text-muted">{submission.language}</td>
+                        <td className="px-6 py-4 text-text-muted">{submission.time}ms</td>
+                        <td className="px-6 py-4 text-text-muted">{submission.memory}MB</td>
                         <td className="px-6 py-4 text-text-muted">{submission.submittedAt}</td>
                         <td className="px-6 py-4">
                           <div className="flex space-x-2">
-                            <button className="text-blue-400 hover:text-blue-300 text-sm">View Code</button>
-                            <button 
-                              className="text-green-400 hover:text-green-300 text-sm"
+                            <button
+                              className="text-blue-400 hover:text-blue-300 text-sm"
                               onClick={() => handleRerunSubmission(submission.id)}
                             >
-                              Re-run
+                              Rerun
                             </button>
                           </div>
                         </td>
@@ -932,326 +1578,129 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
             </div>
           )}
 
-          {/* Contest Management */}
-          {activeTab === "contests" && !loading && (
-            <div>
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-3xl font-bold text-text">Contest Management</h2>
-                <button className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md">
-                  Create New Contest
-                </button>
-              </div>
-              
-              <div className="bg-surface rounded-lg p-8 border border-border text-center">
-                <div className="text-6xl mb-4">🏆</div>
-                <h3 className="text-2xl font-bold text-text mb-2">Contest Management</h3>
-                <p className="text-text-muted mb-4">Manage coding contests, participants, and leaderboards</p>
-                <button 
-                  onClick={() => setActiveTab("contests")}
-                  className="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-md"
-                >
-                  Create Your First Contest
-                </button>
+          {/* Modals */}
+          {showUserProfile && selectedUser && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-surface rounded-lg p-6 max-w-md w-full mx-4">
+                <h3 className="text-xl font-bold text-text mb-4">User Profile</h3>
+                <div className="space-y-3">
+                  <p><strong>Username:</strong> {selectedUser.username}</p>
+                  <p><strong>Email:</strong> {selectedUser.email}</p>
+                  <p><strong>Role:</strong> {selectedUser.role}</p>
+                  <p><strong>Status:</strong> {selectedUser.status}</p>
+                  <p><strong>Join Date:</strong> {selectedUser.joinDate}</p>
+                  <p><strong>Last Login:</strong> {selectedUser.lastLogin}</p>
+                  <p><strong>Problems Solved:</strong> {selectedUser.problemsSolved}</p>
+                  <p><strong>Total Submissions:</strong> {selectedUser.totalSubmissions}</p>
+                </div>
+                <div className="flex justify-end mt-6">
+                  <button
+                    onClick={() => setShowUserProfile(false)}
+                    className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
           )}
-        </main>
-      </div>
 
-      {/* Problem Create Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-surface rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-text">Create New Problem</h3>
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="text-text-muted hover:text-text"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-text mb-1">Title</label>
-                  <input
-                    type="text"
-                    value={createFormData.title}
-                    onChange={(e) => setCreateFormData({...createFormData, title: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text mb-1">Slug</label>
-                  <input
-                    type="text"
-                    value={createFormData.slug}
-                    onChange={(e) => setCreateFormData({...createFormData, slug: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-text mb-1">Description</label>
-                <textarea
-                  value={createFormData.description}
-                  onChange={(e) => setCreateFormData({...createFormData, description: e.target.value})}
-                  rows={4}
-                  className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-text mb-1">Input Format</label>
-                  <textarea
-                    value={createFormData.inputFormat}
-                    onChange={(e) => setCreateFormData({...createFormData, inputFormat: e.target.value})}
-                    rows={3}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text mb-1">Output Format</label>
-                  <textarea
-                    value={createFormData.outputFormat}
-                    onChange={(e) => setCreateFormData({...createFormData, outputFormat: e.target.value})}
-                    rows={3}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-text mb-1">Difficulty</label>
-                  <select
-                    value={createFormData.difficulty}
-                    onChange={(e) => setCreateFormData({...createFormData, difficulty: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  >
-                    <option value="EASY">Easy</option>
-                    <option value="MEDIUM">Medium</option>
-                    <option value="HARD">Hard</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text mb-1">Time Limit (ms)</label>
-                  <input
-                    type="number"
-                    value={createFormData.timeLimitMs}
-                    onChange={(e) => setCreateFormData({...createFormData, timeLimitMs: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text mb-1">Memory Limit (MB)</label>
-                  <input
-                    type="number"
-                    value={createFormData.memoryLimitMb}
-                    onChange={(e) => setCreateFormData({...createFormData, memoryLimitMb: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text mb-1">Status</label>
-                  <select
-                    value={createFormData.status}
-                    onChange={(e) => setCreateFormData({...createFormData, status: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  >
-                    <option value="DRAFT">Draft</option>
-                    <option value="PUBLISHED">Published</option>
-                    <option value="ARCHIVED">Archived</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-text mb-1">Function Name</label>
-                  <input
-                    type="text"
-                    value={createFormData.functionName}
-                    onChange={(e) => setCreateFormData({...createFormData, functionName: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text mb-1">Parameters</label>
-                  <input
-                    type="text"
-                    value={createFormData.parameters}
-                    onChange={(e) => setCreateFormData({...createFormData, parameters: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-text mb-1">Return Type</label>
-                <input
-                  type="text"
-                  value={createFormData.returnType}
-                  onChange={(e) => setCreateFormData({...createFormData, returnType: e.target.value})}
-                  className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-text mb-1">Supported Languages</label>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {["JAVA", "PYTHON", "JAVASCRIPT", "CPP", "C"].map((lang) => (
-                    <label key={lang} className="flex items-center space-x-2 py-1">
-                      <input
-                        type="checkbox"
-                        checked={createFormData.supportedLanguages.includes(lang)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setCreateFormData({
-                              ...createFormData,
-                              supportedLanguages: [...createFormData.supportedLanguages, lang]
-                            })
-                          } else {
-                            setCreateFormData({
-                              ...createFormData,
-                              supportedLanguages: createFormData.supportedLanguages.filter(l => l !== lang)
-                            })
-                          }
-                        }}
-                        className="rounded"
-                      />
-                      <span className="text-text text-sm">{lang}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-text mb-1">Code Templates</label>
+          {showEditUser && selectedUser && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-surface rounded-lg p-6 max-w-md w-full mx-4">
+                <h3 className="text-xl font-bold text-text mb-4">Edit User</h3>
                 <div className="space-y-4">
-                  {createFormData.supportedLanguages.map((lang) => (
-                    <div key={lang} className="border border-border rounded-md p-4">
-                      <h4 className="text-sm font-medium text-text mb-2">{lang} Template</h4>
-                      <textarea
-                        value={createFormData.codeTemplates[lang] || ""}
-                        onChange={(e) => setCreateFormData({
-                          ...createFormData,
-                          codeTemplates: {
-                            ...createFormData.codeTemplates,
-                            [lang]: e.target.value
-                          }
-                        })}
-                        rows={6}
-                        className="w-full px-3 py-2 rounded-md bg-surface-light border border-border font-mono text-sm"
-                        placeholder={`Enter ${lang} code template...`}
-                      />
-                    </div>
-                  ))}
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={editUserData.email}
+                    onChange={(e) => setEditUserData({...editUserData, email: e.target.value})}
+                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
+                  />
+                  <select
+                    value={editUserData.role}
+                    onChange={(e) => setEditUserData({...editUserData, role: e.target.value})}
+                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
+                  >
+                    <option value="USER">User</option>
+                    <option value="ADMIN">Admin</option>
+                    <option value="PROBLEM_SETTER">Problem Setter</option>
+                  </select>
+                  <select
+                    value={editUserData.status}
+                    onChange={(e) => setEditUserData({...editUserData, status: e.target.value})}
+                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
+                  >
+                    <option value="ACTIVE">Active</option>
+                    <option value="INACTIVE">Inactive</option>
+                    <option value="BANNED">Banned</option>
+                  </select>
+                  <input
+                    type="password"
+                    placeholder="New Password (leave empty to keep current)"
+                    value={editUserData.password}
+                    onChange={(e) => setEditUserData({...editUserData, password: e.target.value})}
+                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
+                  />
+                </div>
+                <div className="flex justify-end space-x-3 mt-6">
+                  <button
+                    onClick={() => setShowEditUser(false)}
+                    className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveUserEdit}
+                    className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md"
+                  >
+                    Save
+                  </button>
                 </div>
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-text mb-1">Categories</label>
-                <div className="max-h-32 overflow-y-auto border border-border rounded-md p-2">
-                  {categories.map((category) => (
-                    <label key={category.id} className="flex items-center space-x-2 py-1">
-                      <input
-                        type="checkbox"
-                        checked={createFormData.categoryIds.includes(category.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setCreateFormData({
-                              ...createFormData,
-                              categoryIds: [...createFormData.categoryIds, category.id]
-                            })
-                          } else {
-                            setCreateFormData({
-                              ...createFormData,
-                              categoryIds: createFormData.categoryIds.filter(id => id !== category.id)
-                            })
-                          }
-                        }}
-                        className="rounded"
-                      />
-                      <span className="text-text text-sm">{category.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
             </div>
+          )}
 
-            <div className="flex justify-end space-x-3 mt-6">
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 text-text-muted hover:text-text transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateProblem}
-                disabled={loading}
-                className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md transition-colors disabled:opacity-50"
-              >
-                {loading ? "Creating..." : "Create Problem"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Problem Edit Modal */}
-      {showEditModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-surface rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-text">Edit Problem</h3>
-              <button
-                onClick={() => setShowEditModal(false)}
-                className="text-text-muted hover:text-text"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-text mb-1">Title</label>
+          {showEditModal && editingProblem && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-surface rounded-lg p-6 max-w-2xl w-full mx-4 max-h-96 overflow-y-auto">
+                <h3 className="text-xl font-bold text-text mb-4">Edit Problem</h3>
+                <div className="space-y-4">
                   <input
                     type="text"
+                    placeholder="Title"
                     value={editFormData.title}
                     onChange={(e) => setEditFormData({...editFormData, title: e.target.value})}
                     className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text mb-1">Slug</label>
                   <input
                     type="text"
+                    placeholder="Slug"
                     value={editFormData.slug}
                     onChange={(e) => setEditFormData({...editFormData, slug: e.target.value})}
                     className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
                   />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-text mb-1">Description</label>
-                <textarea
-                  value={editFormData.description}
-                  onChange={(e) => setEditFormData({...editFormData, description: e.target.value})}
-                  rows={4}
-                  className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-text mb-1">Difficulty</label>
+                  <textarea
+                    placeholder="Description"
+                    value={editFormData.description}
+                    onChange={(e) => setEditFormData({...editFormData, description: e.target.value})}
+                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
+                    rows="4"
+                  />
+                  <textarea
+                    placeholder="Input Format"
+                    value={editFormData.inputFormat}
+                    onChange={(e) => setEditFormData({...editFormData, inputFormat: e.target.value})}
+                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
+                    rows="3"
+                  />
+                  <textarea
+                    placeholder="Output Format"
+                    value={editFormData.outputFormat}
+                    onChange={(e) => setEditFormData({...editFormData, outputFormat: e.target.value})}
+                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
+                    rows="3"
+                  />
                   <select
                     value={editFormData.difficulty}
                     onChange={(e) => setEditFormData({...editFormData, difficulty: e.target.value})}
@@ -1261,75 +1710,270 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
                     <option value="MEDIUM">Medium</option>
                     <option value="HARD">Hard</option>
                   </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text mb-1">Time Limit (ms)</label>
                   <input
                     type="number"
+                    placeholder="Time Limit (ms)"
                     value={editFormData.timeLimitMs}
                     onChange={(e) => setEditFormData({...editFormData, timeLimitMs: e.target.value})}
                     className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text mb-1">Memory Limit (MB)</label>
                   <input
                     type="number"
+                    placeholder="Memory Limit (MB)"
                     value={editFormData.memoryLimitMb}
                     onChange={(e) => setEditFormData({...editFormData, memoryLimitMb: e.target.value})}
                     className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
                   />
+                  <input
+                    type="text"
+                    placeholder="Function Name"
+                    value={editFormData.functionName}
+                    onChange={(e) => setEditFormData({...editFormData, functionName: e.target.value})}
+                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Parameters"
+                    value={editFormData.parameters}
+                    onChange={(e) => setEditFormData({...editFormData, parameters: e.target.value})}
+                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Return Type"
+                    value={editFormData.returnType}
+                    onChange={(e) => setEditFormData({...editFormData, returnType: e.target.value})}
+                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
+                  />
+                  <select
+                    value={editFormData.status}
+                    onChange={(e) => setEditFormData({...editFormData, status: e.target.value})}
+                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
+                  >
+                    <option value="DRAFT">Draft</option>
+                    <option value="PUBLISHED">Published</option>
+                    <option value="ARCHIVED">Archived</option>
+                  </select>
+                </div>
+                <div className="flex justify-end space-x-3 mt-6">
+                  <button
+                    onClick={() => setShowEditModal(false)}
+                    className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveProblemEdit}
+                    className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md"
+                  >
+                    Save
+                  </button>
                 </div>
               </div>
+            </div>
+          )}
 
-              <div>
-                <label className="block text-sm font-medium text-text mb-1">Categories</label>
-                <div className="max-h-32 overflow-y-auto border border-border rounded-md p-2">
-                  {categories.map((category) => (
-                    <label key={category.id} className="flex items-center space-x-2 py-1">
+          {showProblemModal && !isEditing && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-surface rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                <h3 className="text-xl font-bold text-text mb-4">Create New Problem</h3>
+                <div className="mb-4">
+                  <div className="flex space-x-4 border-b border-border">
+                    <button
+                      onClick={() => setActiveProblemTab('details')}
+                      className={`py-2 px-4 ${activeProblemTab === 'details' ? 'border-b-2 border-primary text-primary' : 'text-text-muted'}`}
+                    >
+                      Details
+                    </button>
+                    <button
+                      onClick={() => setActiveProblemTab('testCases')}
+                      className={`py-2 px-4 ${activeProblemTab === 'testCases' ? 'border-b-2 border-primary text-primary' : 'text-text-muted'}`}
+                    >
+                      Test Cases
+                    </button>
+                    <button
+                      onClick={() => setActiveProblemTab('codeTemplates')}
+                      className={`py-2 px-4 ${activeProblemTab === 'codeTemplates' ? 'border-b-2 border-primary text-primary' : 'text-text-muted'}`}
+                    >
+                      Code Templates
+                    </button>
+                    <button
+                      onClick={() => setActiveProblemTab('validation')}
+                      className={`py-2 px-4 ${activeProblemTab === 'validation' ? 'border-b-2 border-primary text-primary' : 'text-text-muted'}`}
+                    >
+                      Validation
+                    </button>
+                  </div>
+                </div>
+                <div className="mb-6">
+                  {activeProblemTab === 'details' && <ProblemDetailsTab formData={problemFormData} setFormData={setProblemFormData} categories={categories} />}
+                  {activeProblemTab === 'testCases' && <TestCasesTab formData={problemFormData} setFormData={setProblemFormData} />}
+                  {activeProblemTab === 'codeTemplates' && <CodeTemplatesTab formData={problemFormData} setFormData={setProblemFormData} />}
+                  {activeProblemTab === 'validation' && <ProblemValidationTab formData={problemFormData} />}
+                </div>
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={() => setShowProblemModal(false)}
+                    className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreateProblem}
+                    className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md"
+                  >
+                    Create
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showCreateCategoryModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-surface rounded-lg p-6 max-w-md w-full mx-4">
+                <h3 className="text-xl font-bold text-text mb-4">Create New Category</h3>
+                <div className="space-y-4">
+                  <input
+                    type="text"
+                    placeholder="Category Name"
+                    value={newCategory.name}
+                    onChange={(e) => setNewCategory({...newCategory, name: e.target.value})}
+                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
+                  />
+                  <textarea
+                    placeholder="Description"
+                    value={newCategory.description}
+                    onChange={(e) => setNewCategory({...newCategory, description: e.target.value})}
+                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
+                    rows="3"
+                  />
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="color"
+                      value={newCategory.color}
+                      onChange={(e) => setNewCategory({...newCategory, color: e.target.value})}
+                      className="w-12 h-10 rounded border border-border"
+                    />
+                    <span className="text-text-muted">Color</span>
+                  </div>
+                </div>
+                <div className="flex justify-end space-x-3 mt-6">
+                  <button
+                    onClick={() => setShowCreateCategoryModal(false)}
+                    className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreateCategory}
+                    className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md"
+                  >
+                    Create
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showContestModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-surface rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                <h3 className="text-xl font-bold text-text mb-4">Create New Contest</h3>
+                <div className="space-y-4">
+                  <input
+                    type="text"
+                    placeholder="Contest Title"
+                    value={contestFormData.title}
+                    onChange={(e) => setContestFormData({...contestFormData, title: e.target.value})}
+                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
+                  />
+                  <textarea
+                    placeholder="Contest Description"
+                    value={contestFormData.description}
+                    onChange={(e) => setContestFormData({...contestFormData, description: e.target.value})}
+                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
+                    rows="4"
+                  />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-text-muted mb-1">Start Time</label>
                       <input
-                        type="checkbox"
-                        checked={editFormData.categoryIds.includes(category.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setEditFormData({
-                              ...editFormData,
-                              categoryIds: [...editFormData.categoryIds, category.id]
-                            })
-                          } else {
-                            setEditFormData({
-                              ...editFormData,
-                              categoryIds: editFormData.categoryIds.filter(id => id !== category.id)
-                            })
-                          }
-                        }}
-                        className="rounded"
+                        type="datetime-local"
+                        value={contestFormData.startTime}
+                        onChange={(e) => setContestFormData({...contestFormData, startTime: e.target.value})}
+                        className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
                       />
-                      <span className="text-text text-sm">{category.name}</span>
-                    </label>
-                  ))}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-text-muted mb-1">End Time</label>
+                      <input
+                        type="datetime-local"
+                        value={contestFormData.endTime}
+                        onChange={(e) => setContestFormData({...contestFormData, endTime: e.target.value})}
+                        className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-text-muted mb-2">Select Problems</label>
+                    <div className="bg-surface-light border border-border rounded-md p-4 max-h-48 overflow-y-auto">
+                      {problems.length === 0 ? (
+                        <p className="text-text-muted text-sm">No problems available. Create some problems first.</p>
+                      ) : (
+                        problems.map((problem) => (
+                          <label key={problem.id} className="flex items-center space-x-2 mb-2">
+                            <input
+                              type="checkbox"
+                              checked={contestFormData.problemIds.includes(problem.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setContestFormData({
+                                    ...contestFormData,
+                                    problemIds: [...contestFormData.problemIds, problem.id]
+                                  })
+                                } else {
+                                  setContestFormData({
+                                    ...contestFormData,
+                                    problemIds: contestFormData.problemIds.filter(id => id !== problem.id)
+                                  })
+                                }
+                              }}
+                              className="rounded border-border"
+                            />
+                            <span className="text-text text-sm">{problem.title}</span>
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                              problem.difficulty === 'EASY' ? 'bg-green-500/20 text-green-400' :
+                              problem.difficulty === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400' :
+                              'bg-red-500/20 text-red-400'
+                            }`}>
+                              {problem.difficulty}
+                            </span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-end space-x-3 mt-6">
+                  <button
+                    onClick={() => setShowContestModal(false)}
+                    className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreateContest}
+                    className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md"
+                  >
+                    Create Contest
+                  </button>
                 </div>
               </div>
             </div>
-
-            <div className="flex justify-end space-x-3 mt-6">
-              <button
-                onClick={() => setShowEditModal(false)}
-                className="px-4 py-2 text-text-muted hover:text-text transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveProblemEdit}
-                disabled={loading}
-                className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md transition-colors disabled:opacity-50"
-              >
-                {loading ? "Saving..." : "Save Changes"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          )}
+        </main>
+      </div>
     </div>
   )
 }

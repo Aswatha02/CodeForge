@@ -1,23 +1,39 @@
 package com.CodeForge.CodeForge.services;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
-import java.util.ArrayList;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.CodeForge.CodeForge.model.*;
-import com.CodeForge.CodeForge.repository.*;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.CodeForge.CodeForge.dto.ExecutionRequest;
+import com.CodeForge.CodeForge.dto.ExecutionResponse;
+import com.CodeForge.CodeForge.model.Contest;
+import com.CodeForge.CodeForge.model.ContestParticipant;
+import com.CodeForge.CodeForge.model.ContestProblem;
+import com.CodeForge.CodeForge.model.Problem;
+import com.CodeForge.CodeForge.model.Submission;
+import com.CodeForge.CodeForge.model.TestCase;
+import com.CodeForge.CodeForge.model.User;
+import com.CodeForge.CodeForge.repository.ContestParticipantRepository;
+import com.CodeForge.CodeForge.repository.ContestProblemRepository;
+import com.CodeForge.CodeForge.repository.ContestRepository;
+import com.CodeForge.CodeForge.repository.ProblemRepository;
+import com.CodeForge.CodeForge.repository.SubmissionRepository;
+import com.CodeForge.CodeForge.repository.TestCaseRepository;
+import com.CodeForge.CodeForge.repository.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 @Transactional
@@ -33,6 +49,7 @@ public class SubmissionService {
     private final LeaderboardService leaderboardService;
     private final ObjectMapper objectMapper;
     private final FunctionSignatureService functionSignatureService;
+    private final ExecutionService executionService;
 
     public SubmissionService(SubmissionRepository submissionRepository,
                            ProblemRepository problemRepository,
@@ -42,7 +59,8 @@ public class SubmissionService {
                            ContestParticipantRepository contestParticipantRepository,
                            TestCaseRepository testCaseRepository,
                            LeaderboardService leaderboardService,
-                           FunctionSignatureService functionSignatureService) {
+                           FunctionSignatureService functionSignatureService,
+                           ExecutionService executionService) {
         this.submissionRepository = submissionRepository;
         this.problemRepository = problemRepository;
         this.contestRepository = contestRepository;
@@ -53,6 +71,7 @@ public class SubmissionService {
         this.leaderboardService = leaderboardService;
         this.objectMapper = new ObjectMapper();
         this.functionSignatureService = functionSignatureService;
+        this.executionService = executionService;
     }
 
     @Transactional
@@ -126,65 +145,82 @@ public class SubmissionService {
     }
 
     private Submission executeAgainstTestCases(Submission submission, Problem problem, List<TestCase> testCases) {
-        // Use direct field access instead of getters
+        // Create ExecutionRequest
+        ExecutionRequest request = new ExecutionRequest();
+        request.setCombinedCode(submission.getCode());
+        request.setLanguage(submission.getLanguage().name());
+        request.setTimeLimitMs(problem.getTimeLimitMs());
+        request.setMemoryLimitMb(problem.getMemoryLimitMb());
+
+        // Convert test cases to ExecutionRequest.TestCaseExecution
+        List<ExecutionRequest.TestCaseExecution> testCaseExecutions = testCases.stream()
+            .map(tc -> {
+                ExecutionRequest.TestCaseExecution tce = new ExecutionRequest.TestCaseExecution();
+                tce.setTestCaseId(tc.getId());
+                tce.setInputData(tc.getInputData());
+                tce.setExpectedOutput(tc.getExpectedOutput());
+                tce.setWeight(1); // Default weight
+                return tce;
+            })
+            .collect(Collectors.toList());
+
+        request.setTestCases(testCaseExecutions);
+
+        // Execute using ExecutionService
+        ExecutionResponse response = executionService.executeCode(request);
+
+        // Process the response
         submission.setTotalTestCases(testCases.size());
         submission.setPassedTestCases(0);
 
-        boolean allPassed = true;
-        int executionTime = 0;
-        int memoryUsed = 0;
-
-        for (int i = 0; i < testCases.size(); i++) {
-            TestCase testCase = testCases.get(i);
-            
-            try {
-                ExecutionResult result = executeSingleTestCase(
-                    submission.getCode(), // This should work if you add getCode() to Submission model
-                    submission.getLanguage(), // This should work if you add getLanguage() to Submission model
-                    testCase.getInputData(),
-                    problem.getTimeLimitMs(),
-                    problem.getMemoryLimitMb()
-                );
-
-                executionTime = Math.max(executionTime, result.executionTime);
-                memoryUsed = Math.max(memoryUsed, result.memoryUsed);
-
-                if (result.timedOut) {
+        if ("SUCCESS".equals(response.getStatus())) {
+            // Count passed test cases
+            int passedCount = 0;
+            for (ExecutionResponse.TestCaseExecutionResult result : response.getTestCaseResults()) {
+                if ("PASSED".equals(result.getStatus())) {
+                    passedCount++;
+                } else if ("FAILED".equals(result.getStatus())) {
+                    // Set wrong answer details from the first failed test case
+                    if (submission.getStatus() != Submission.Status.WRONG_ANSWER) {
+                        submission.setStatus(Submission.Status.WRONG_ANSWER);
+                        submission.setActualOutput(result.getActualOutput());
+                        // Find the corresponding test case to get expected output
+                        TestCase failedTestCase = testCases.stream()
+                            .filter(tc -> tc.getId().equals(result.getTestCaseId()))
+                            .findFirst().orElse(null);
+                        if (failedTestCase != null) {
+                            submission.setExpectedOutput(failedTestCase.getExpectedOutput());
+                        }
+                        submission.setErrorMessage("Wrong answer on test case");
+                    }
+                } else if ("TIME_LIMIT_EXCEEDED".equals(result.getStatus())) {
                     submission.setStatus(Submission.Status.TIME_LIMIT_EXCEEDED);
-                    submission.setErrorMessage("Time limit exceeded on test case " + (i + 1));
+                    submission.setErrorMessage("Time limit exceeded");
                     return submission;
-                }
-
-                if (result.error != null) {
+                } else if ("RUNTIME_ERROR".equals(result.getStatus())) {
                     submission.setStatus(Submission.Status.RUNTIME_ERROR);
-                    submission.setErrorMessage("Runtime error on test case " + (i + 1) + ": " + result.error);
+                    submission.setErrorMessage("Runtime error: " + result.getErrorMessage());
                     return submission;
                 }
-
-                // Compare with expected output
-                if (compareOutputs(result.output, testCase.getExpectedOutput())) {
-                    submission.setPassedTestCases(submission.getPassedTestCases() + 1);
-                } else {
-                    submission.setStatus(Submission.Status.WRONG_ANSWER);
-                    submission.setErrorMessage("Wrong answer on test case " + (i + 1));
-                    submission.setActualOutput(result.output);
-                    submission.setExpectedOutput(testCase.getExpectedOutput());
-                    allPassed = false;
-                    break;
-                }
-
-            } catch (Exception e) {
-                submission.setStatus(Submission.Status.RUNTIME_ERROR);
-                submission.setErrorMessage("Execution failed on test case " + (i + 1) + ": " + e.getMessage());
-                return submission;
             }
-        }
+            submission.setPassedTestCases(passedCount);
 
-        submission.setExecutionTime(executionTime);
-        submission.setMemoryUsed(memoryUsed);
+            if (passedCount == testCases.size()) {
+                submission.setStatus(Submission.Status.ACCEPTED);
+            }
 
-        if (allPassed && submission.getPassedTestCases() == submission.getTotalTestCases()) {
-            submission.setStatus(Submission.Status.ACCEPTED);
+            submission.setExecutionTime(response.getTotalExecutionTime() != null ? response.getTotalExecutionTime() : 0);
+            submission.setMemoryUsed(response.getMaxMemoryUsed() != null ? response.getMaxMemoryUsed() / 1024 : 0); // Convert KB to MB
+
+        } else if ("COMPILATION_ERROR".equals(response.getStatus())) {
+            submission.setStatus(Submission.Status.COMPILATION_ERROR);
+            submission.setErrorMessage("Compilation error: " + response.getCompilationError());
+        } else if ("EXECUTION_SERVICE_ERROR".equals(response.getStatus()) || "EXECUTION_SERVICE_UNAVAILABLE".equals(response.getStatus())) {
+            submission.setStatus(Submission.Status.RUNTIME_ERROR);
+            submission.setErrorMessage("Execution service error: " + response.getCompilationError());
+        } else {
+            submission.setStatus(Submission.Status.RUNTIME_ERROR);
+            submission.setErrorMessage("Unknown execution error");
         }
 
         return submission;
@@ -230,6 +266,7 @@ public class SubmissionService {
                 case PYTHON -> createPythonExecutionCode(userCode, inputNode, functionName);
                 case JAVA -> createJavaExecutionCode(userCode, inputNode, functionName);
                 case CPP -> createCppExecutionCode(userCode, inputNode, functionName);
+                case C -> createCExecutionCode(userCode, inputNode, functionName);
                 default -> throw new IllegalArgumentException("Unsupported language: " + language);
             };
         } catch (Exception e) {
@@ -414,6 +451,83 @@ public class SubmissionService {
         return sb.toString();
     }
 
+    private String createCExecutionCode(String userCode, JsonNode inputNode, String functionName) {
+        StringBuilder sb = new StringBuilder();
+
+        // Add necessary includes
+        sb.append("#include <stdio.h>\n");
+        sb.append("#include <stdlib.h>\n\n");
+
+        // Add user's code
+        sb.append(userCode).append("\n\n");
+
+        // Create main function
+        sb.append("int main() {\n");
+
+        // Create variables from input JSON
+        List<String> paramNames = new ArrayList<>();
+        final int[] arraySizeHolder = {0};
+        final String[] arrayNameHolder = {null};
+
+        inputNode.fieldNames().forEachRemaining(fieldName -> {
+            JsonNode fieldValue = inputNode.get(fieldName);
+
+            if (fieldValue.isArray()) {
+                sb.append("    int ").append(fieldName).append("[] = {");
+                for (int i = 0; i < fieldValue.size(); i++) {
+                    if (i > 0) sb.append(", ");
+                    sb.append(fieldValue.get(i).asInt());
+                }
+                sb.append("};\n");
+                arraySizeHolder[0] = fieldValue.size();
+                arrayNameHolder[0] = fieldName;
+                paramNames.add(fieldName);
+            } else if (fieldValue.isNumber()) {
+                sb.append("    int ").append(fieldName).append(" = ").append(fieldValue.asInt()).append(";\n");
+                paramNames.add(fieldName);
+            } else if (fieldValue.isTextual()) {
+                sb.append("    char* ").append(fieldName).append(" = \"").append(fieldValue.asText()).append("\";\n");
+                paramNames.add(fieldName);
+            }
+        });
+
+        if (arrayNameHolder[0] != null) {
+            sb.append("    int ").append(arrayNameHolder[0]).append("_size = ").append(arraySizeHolder[0]).append(";\n");
+        }
+
+        sb.append("\n");
+
+        // Call user's function
+        sb.append("    // Call user's solution\n");
+        sb.append("    int* result = ").append(functionName).append("(");
+        List<String> callParams = new ArrayList<>();
+        for (String param : paramNames) {
+            callParams.add(param);
+            if (param.equals(arrayNameHolder[0])) {
+                callParams.add(param + "_size");
+            }
+        }
+        sb.append(String.join(", ", callParams));
+        sb.append(");\n\n");
+
+        // Output the result
+        sb.append("    // Output result as JSON array\n");
+        if (arraySizeHolder[0] > 0) {
+            sb.append("    printf(\"[\");\n");
+            sb.append("    for (int i = 0; i < ").append(arraySizeHolder[0]).append("; ++i) {\n");
+            sb.append("        printf(\"%d\", result[i]);\n");
+            sb.append("        if (i < ").append(arraySizeHolder[0]).append(" - 1) printf(\",\");\n");
+            sb.append("    }\n");
+            sb.append("    printf(\"]\\n\");\n");
+        } else {
+            sb.append("    printf(\"%d\\n\", *result);\n");
+        }
+        sb.append("    return 0;\n");
+        sb.append("}");
+
+        return sb.toString();
+    }
+
     private ExecutionResult executeInDocker(String executionCode, Submission.Language language,
                                           int timeLimitMs, int memoryLimitMb) throws Exception {
         String imageName = getDockerImage(language);
@@ -476,6 +590,7 @@ public class SubmissionService {
             case PYTHON -> "python /code/main.py";
             case JAVA -> "cd /code && javac Main.java && java Main";
             case CPP -> "cd /code && g++ -std=c++11 -o main main.cpp && ./main";
+            case C -> "cd /code && gcc -o main main.c && ./main";
             default -> throw new IllegalArgumentException("Unsupported language: " + language);
         };
     }
@@ -486,6 +601,7 @@ public class SubmissionService {
             case JAVA -> "openjdk:17-slim";
             case PYTHON -> "python:3.9-slim";
             case CPP -> "gcc:latest";
+            case C -> "gcc:latest";
             default -> throw new IllegalArgumentException("Unsupported language: " + language);
         };
     }
@@ -496,6 +612,7 @@ public class SubmissionService {
             case JAVA -> "Main.java";
             case PYTHON -> "main.py";
             case CPP -> "main.cpp";
+            case C -> "main.c";
             default -> throw new IllegalArgumentException("Unsupported language: " + language);
         };
     }
@@ -574,6 +691,14 @@ public class SubmissionService {
         return (long) submissionRepository.findByUserId(userId).size();
     }
 
+    public Long getUserAcceptedSubmissionCount(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        return submissionRepository.findByUser(user).stream()
+                .filter(submission -> submission.getStatus() == Submission.Status.ACCEPTED)
+                .count();
+    }
+
     public Long getProblemSubmissionCount(Long problemId) {
         return (long) submissionRepository.findByProblemId(problemId).size();
     }
@@ -624,5 +749,14 @@ public class SubmissionService {
         // Re-execute against test cases
         List<TestCase> testCases = testCaseRepository.findByProblem(submission.getProblem());
         return executeAgainstTestCases(submission, submission.getProblem(), testCases);
+    }
+
+    public List<Submission> getRecentSubmissionsByUser(Long userId, int limit) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        return submissionRepository.findByUserOrderBySubmittedAtDesc(user)
+                .stream()
+                .limit(limit)
+                .collect(Collectors.toList());
     }
 }

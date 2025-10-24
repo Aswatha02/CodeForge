@@ -45,6 +45,9 @@ public class CodeTemplate {
     @Column(name = "template_code", columnDefinition = "TEXT", nullable = false)
     private String templateCode;
 
+    @Column(name = "hidden_wrapper_code", columnDefinition = "TEXT")
+    private String hiddenWrapperCode; // Hidden code used during judging to wrap user code
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
@@ -58,7 +61,7 @@ public class CodeTemplate {
 
     // Enum for supported languages
     public static enum Language {
-    JAVA, PYTHON, CPP, JAVASCRIPT, GO, RUST
+    JAVA, PYTHON, CPP, JAVASCRIPT, C
 }
 
     // Constructors
@@ -70,8 +73,16 @@ public class CodeTemplate {
         this.templateCode = templateCode;
     }
 
+    public CodeTemplate(Problem problem, Language language, String templateCode, String hiddenWrapperCode) {
+        this.problem = problem;
+        this.language = language;
+        this.templateCode = templateCode;
+        this.hiddenWrapperCode = hiddenWrapperCode;
+    }
+
     // Getters & Setters
     public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
 
     public Problem getProblem() { return problem; }
     public void setProblem(Problem problem) { this.problem = problem; }
@@ -84,6 +95,9 @@ public class CodeTemplate {
 
     public String getTemplate() { return templateCode; }
     public void setTemplate(String template) { this.templateCode = template; }
+
+    public String getHiddenWrapperCode() { return hiddenWrapperCode; }
+    public void setHiddenWrapperCode(String hiddenWrapperCode) { this.hiddenWrapperCode = hiddenWrapperCode; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

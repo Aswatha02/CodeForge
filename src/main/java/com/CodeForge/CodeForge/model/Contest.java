@@ -1,10 +1,13 @@
 package com.CodeForge.CodeForge.model;
 
 import java.time.LocalDateTime;
+import java.util.List;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import jakarta.persistence.Column;
-import jakarta.persistence.Entity; // ADD THIS IMPORT
-import jakarta.persistence.EnumType;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType; // ADD THIS IMPORT
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -12,9 +15,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 
 
 @Entity
@@ -25,22 +27,18 @@ public class Contest {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @NotBlank
     @Column(nullable = false)
     private String title;
 
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @NotNull
     @Column(name = "start_time", nullable = false)
     private LocalDateTime startTime;
 
-    @NotNull
     @Column(name = "end_time", nullable = false)
     private LocalDateTime endTime;
 
-    @NotNull
     @Column(nullable = false)
     private Integer duration; // in minutes
 
@@ -59,6 +57,10 @@ public class Contest {
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "contest", fetch = FetchType.LAZY)
+    private List<ContestProblem> problems;
 
     // Enum for contest status
     public enum Status {
@@ -113,7 +115,8 @@ public class Contest {
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 
-    // ADD THESE GETTER AND SETTER FOR PROBLEMS
+    public List<ContestProblem> getProblems() { return problems; }
+    public void setProblems(List<ContestProblem> problems) { this.problems = problems; }
 
 }
 

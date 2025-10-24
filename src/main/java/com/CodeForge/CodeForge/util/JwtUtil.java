@@ -1,21 +1,32 @@
 package com.CodeForge.CodeForge.util;
 
-import io.jsonwebtoken.*;
-import io.jsonwebtoken.security.Keys;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.stereotype.Component;
-
-import javax.crypto.SecretKey;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import javax.crypto.SecretKey;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.stereotype.Component;
+
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.MalformedJwtException;
+import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.SignatureException;
+import io.jsonwebtoken.security.Keys;
+
 @Component
 public class JwtUtil {
+
+    private static final Logger logger = LoggerFactory.getLogger(JwtUtil.class);
 
     @Value("${jwt.secret:mySecretKeyForJWTGeneration2024CodeForgeApplicationSecurity}")
     private String secret;
@@ -24,7 +35,19 @@ public class JwtUtil {
     private long expiration;
 
     private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(secret.getBytes());
+        // Ensure the secret is at least 32 characters for HS256
+        byte[] keyBytes;
+        if (secret.length() < 32) {
+            // Pad the secret to meet minimum requirement
+            StringBuilder paddedSecret = new StringBuilder(secret);
+            while (paddedSecret.length() < 32) {
+                paddedSecret.append("0");
+            }
+            keyBytes = paddedSecret.toString().getBytes();
+        } else {
+            keyBytes = secret.getBytes();
+        }
+        return Keys.hmacShaKeyFor(keyBytes);
     }
 
     public String extractUsername(String token) {
@@ -41,18 +64,32 @@ public class JwtUtil {
     }
 
     private Claims extractAllClaims(String token) {
-        return Jwts.parserBuilder()
-                .setSigningKey(getSigningKey())
-                .build()
-                .parseClaimsJws(token)
-                .getBody();
+        try {
+            return Jwts.parserBuilder()
+                    .setSigningKey(getSigningKey())
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody();
+        } catch (ExpiredJwtException e) {
+            logger.warn("JWT token expired: {}", e.getMessage());
+            throw e;
+        } catch (MalformedJwtException e) {
+            logger.warn("Invalid JWT token: {}", e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            logger.warn("Error parsing JWT token: {}", e.getMessage());
+            throw e;
+        }
     }
 
     private Boolean isTokenExpired(String token) {
-        return extractExpiration(token).before(new Date());
+        try {
+            return extractExpiration(token).before(new Date());
+        } catch (Exception e) {
+            return true;
+        }
     }
 
-    // UPDATED: Include roles in the token
     public String generateToken(UserDetails userDetails) {
         Map<String, Object> claims = new HashMap<>();
         
@@ -75,8 +112,13 @@ public class JwtUtil {
     }
 
     public Boolean validateToken(String token, UserDetails userDetails) {
-        final String username = extractUsername(token);
-        return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
+        try {
+            final String username = extractUsername(token);
+            return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
+        } catch (Exception e) {
+            logger.warn("Token validation failed: {}", e.getMessage());
+            return false;
+        }
     }
 
     public Boolean validateToken(String token) {
@@ -85,9 +127,30 @@ public class JwtUtil {
                 .setSigningKey(getSigningKey())
                 .build()
                 .parseClaimsJws(token);
+            logger.debug("JWT token validated successfully");
             return true;
-        } catch (JwtException | IllegalArgumentException e) {
-            return false;
+        } catch (ExpiredJwtException e) {
+            logger.warn("JWT token expired: {}", e.getMessage());
+        } catch (MalformedJwtException e) {
+            logger.warn("Invalid JWT token: {}", e.getMessage());
+        } catch (SignatureException e) {
+            logger.warn("Invalid JWT signature: {}", e.getMessage());
+        } catch (IllegalArgumentException e) {
+            logger.warn("JWT claims string is empty: {}", e.getMessage());
+        } catch (Exception e) {
+            logger.warn("JWT validation failed: {}", e.getMessage());
+        }
+        return false;
+    }
+
+    // Helper method to get roles from token
+    public String getRolesFromToken(String token) {
+        try {
+            Claims claims = extractAllClaims(token);
+            return claims.get("roles", String.class);
+        } catch (Exception e) {
+            logger.warn("Could not extract roles from token: {}", e.getMessage());
+            return null;
         }
     }
 }

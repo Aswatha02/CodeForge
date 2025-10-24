@@ -14,6 +14,10 @@ public class TestCaseRequest {
     @NotNull(message = "Is sample flag is required")
     private Boolean isSample = true;
 
+    // NEW: Visibility flag - true for public (examples), false for hidden (judging only)
+    @NotNull(message = "Is public flag is required")
+    private Boolean isPublic = true;
+
     private String explanation;
 
     private String testCaseName;
@@ -41,6 +45,14 @@ public class TestCaseRequest {
 
     public void setIsSample(Boolean isSample) {
         this.isSample = isSample;
+    }
+
+    public Boolean getIsPublic() {
+        return isPublic;
+    }
+
+    public void setIsPublic(Boolean isPublic) {
+        this.isPublic = isPublic;
     }
 
     public String getExplanation() {

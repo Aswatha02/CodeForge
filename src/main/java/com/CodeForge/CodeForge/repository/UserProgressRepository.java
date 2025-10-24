@@ -1,14 +1,15 @@
 package com.CodeForge.CodeForge.repository;
 
-import com.CodeForge.CodeForge.model.UserProgress;
+import java.util.List;
+import java.util.Optional;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
-import java.util.Optional;
+import com.CodeForge.CodeForge.model.UserProgress;
 
 @Repository
 public interface UserProgressRepository extends JpaRepository<UserProgress, Long> {
@@ -27,10 +28,10 @@ public interface UserProgressRepository extends JpaRepository<UserProgress, Long
     @Query("SELECT up FROM UserProgress up JOIN up.solvedProblems sp WHERE sp.id = :problemId")
     List<UserProgress> findBySolvedProblems_Id(@Param("problemId") Long problemId);
 
-    // FIXED: Delete user progresses where a specific problem is in solvedProblems
+    // FIXED: Remove a specific problem from all user progress solvedProblems sets
     @Modifying
-    @Query("DELETE FROM UserProgress up WHERE up.id IN (SELECT up2.id FROM UserProgress up2 JOIN up2.solvedProblems sp WHERE sp.id = :problemId)")
-    void deleteByProblemId(@Param("problemId") Long problemId);
+    @Query(value = "DELETE FROM user_solved_problems WHERE problem_id = :problemId", nativeQuery = true)
+    void removeProblemFromSolvedProblems(@Param("problemId") Long problemId);
 
     // FIXED: Count solved problems for a user (using solvedCount field or checking solvedProblems size)
     @Query("SELECT up.solvedCount FROM UserProgress up WHERE up.user.id = :userId")

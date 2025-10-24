@@ -1,22 +1,40 @@
 package com.CodeForge.CodeForge.services;
 
-import com.CodeForge.CodeForge.model.*;
-import com.CodeForge.CodeForge.model.Problem.Difficulty;
-import com.CodeForge.CodeForge.repository.*;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-import java.util.Set;
-import java.util.Optional;
-import java.util.stream.Collectors;
-import java.util.HashSet;
-
-import com.CodeForge.CodeForge.dto.*;
+import com.CodeForge.CodeForge.dto.CodeTemplateRequest;
+import com.CodeForge.CodeForge.dto.ProblemRequest;
+import com.CodeForge.CodeForge.dto.TestCaseRequest;
+import com.CodeForge.CodeForge.model.Category;
+import com.CodeForge.CodeForge.model.CodeTemplate;
+import com.CodeForge.CodeForge.model.Problem;
+import com.CodeForge.CodeForge.model.Problem.Difficulty;
+import com.CodeForge.CodeForge.model.TestCase;
+import com.CodeForge.CodeForge.model.User;
+import com.CodeForge.CodeForge.repository.CategoryRepository;
+import com.CodeForge.CodeForge.repository.CodeTemplateRepository;
+import com.CodeForge.CodeForge.repository.ContestProblemRepository;
+import com.CodeForge.CodeForge.repository.ProblemRepository;
+import com.CodeForge.CodeForge.repository.SubmissionRepository;
+import com.CodeForge.CodeForge.repository.TestCaseRepository;
+import com.CodeForge.CodeForge.repository.UserProgressRepository;
+import com.CodeForge.CodeForge.repository.UserRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 public class ProblemService {
+
+    private static final Logger logger = LoggerFactory.getLogger(ProblemService.class);
 
     private final ProblemRepository problemRepository;
     private final TestCaseRepository testCaseRepository;
@@ -83,7 +101,7 @@ public class ProblemService {
             ObjectMapper mapper = new ObjectMapper();
             mapper.readTree(inputData);
             mapper.readTree(expectedOutput);
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
             throw new RuntimeException("Invalid test case format: " + e.getMessage());
         }
     }
@@ -208,21 +226,70 @@ public class ProblemService {
             }
         }
 
-        // Delete related entities first
-        submissionRepository.deleteByProblemId(problemId);
+        // Clear many-to-many relationships first to avoid constraint issues
+        problem.getCategories().clear();
+        problemRepository.save(problem);
+
+        // Delete related entities in the correct order
+        // Delete contest problems first
         contestProblemRepository.deleteByProblem(problem);
 
-        // Delete user progress entries
-        userProgressRepository.deleteById(problemId);
+        // Delete submissions (this will cascade to execution results if any)
+        submissionRepository.deleteByProblemId(problemId);
 
-        codeTemplateRepository.deleteByProblemId(problemId);
-        testCaseRepository.deleteByProblemId(problemId);
+        // Remove this problem from all user progress solvedProblems sets
+        userProgressRepository.removeProblemFromSolvedProblems(problemId);
 
+        // Note: codeTemplates and testCases will be deleted by cascade when problem is deleted
         problemRepository.delete(problem);
     }
 
+    @Transactional
     public void deleteProblem(Long problemId) {
-        deleteProblem(problemId, null); // Call with null userId for admin override
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new RuntimeException("Problem not found"));
+
+        System.out.println("=== DELETING PROBLEM: " + problem.getTitle() + " (ID: " + problemId + ") ===");
+        
+        try {
+            // 1. First, clear many-to-many relationships
+            System.out.println("Clearing categories...");
+            problem.getCategories().clear();
+            problemRepository.saveAndFlush(problem); // Save immediately to clear relationships
+
+            // 2. Delete related entities in correct order
+            System.out.println("Deleting contest problems...");
+            contestProblemRepository.deleteByProblem(problem);
+
+            // 3. Delete submissions (this is the critical part)
+            System.out.println("Deleting submissions...");
+            submissionRepository.deleteByProblemId(problemId);
+            System.out.println("Deleted submissions");
+
+            // 4. Remove from user progress
+            System.out.println("Removing from user progress...");
+            userProgressRepository.removeProblemFromSolvedProblems(problemId);
+
+            // 5. Delete test cases and code templates (should cascade, but do explicitly if needed)
+            System.out.println("Deleting test cases...");
+            testCaseRepository.deleteByProblemId(problemId);
+
+            System.out.println("Deleting code templates...");
+            codeTemplateRepository.deleteByProblemId(problemId);
+
+            // 6. Finally delete the problem
+            System.out.println("Deleting problem entity...");
+            problemRepository.delete(problem);
+            problemRepository.flush(); // Force immediate delete
+
+            System.out.println("=== PROBLEM DELETED SUCCESSFULLY ===");
+
+        } catch (Exception e) {
+            System.err.println("=== ERROR DELETING PROBLEM ===");
+            System.err.println("Error: " + e.getMessage());
+            logger.error("Failed to delete problem with ID: {}", problemId, e);
+            throw new RuntimeException("Failed to delete problem: " + e.getMessage(), e);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -312,6 +379,19 @@ public class ProblemService {
         existingProblem.setTimeLimitMs(problemRequest.getTimeLimitMs());
         existingProblem.setMemoryLimitMb(problemRequest.getMemoryLimitMb());
 
+        // Update additional fields
+        existingProblem.setConstraints(problemRequest.getConstraints());
+        existingProblem.setPoints(problemRequest.getPoints());
+        existingProblem.setTags(problemRequest.getTags());
+        existingProblem.setExampleInput(problemRequest.getExampleInput());
+        existingProblem.setExampleOutput(problemRequest.getExampleOutput());
+        existingProblem.setIsPrivate(problemRequest.getIsPrivate());
+
+        // Update function signature fields
+        existingProblem.setFunctionName(problemRequest.getFunctionName());
+        existingProblem.setParameters(problemRequest.getParameters());
+        existingProblem.setReturnType(problemRequest.getReturnType());
+
         // Update categories if provided
         if (problemRequest.getCategoryIds() != null && !problemRequest.getCategoryIds().isEmpty()) {
             Set<Category> categories = new HashSet<>();
@@ -360,5 +440,82 @@ public class ProblemService {
                 .orElseThrow(() -> new RuntimeException("Problem not found"));
         problem.setStatus(published ? Problem.Status.ACTIVE : Problem.Status.INACTIVE);
         problemRepository.save(problem);
+    }
+
+    @Transactional
+    public void addTestCase(Long problemId, TestCase testCase) {
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new RuntimeException("Problem not found"));
+        testCase.setProblem(problem);
+        validateTestCaseFormat(testCase.getInputData(), testCase.getExpectedOutput());
+        testCaseRepository.save(testCase);
+    }
+
+    @Transactional
+    public void updateTestCase(Long problemId, Long testCaseId, TestCase updatedTestCase) {
+        TestCase existingTestCase = testCaseRepository.findById(testCaseId)
+                .orElseThrow(() -> new RuntimeException("Test case not found"));
+        if (!existingTestCase.getProblem().getId().equals(problemId)) {
+            throw new RuntimeException("Test case does not belong to the specified problem");
+        }
+        existingTestCase.setInputData(updatedTestCase.getInputData());
+        existingTestCase.setExpectedOutput(updatedTestCase.getExpectedOutput());
+        existingTestCase.setIsSample(updatedTestCase.getIsSample());
+        existingTestCase.setExplanation(updatedTestCase.getExplanation());
+        existingTestCase.setTestCaseName(updatedTestCase.getTestCaseName());
+        validateTestCaseFormat(existingTestCase.getInputData(), existingTestCase.getExpectedOutput());
+        testCaseRepository.save(existingTestCase);
+    }
+
+    @Transactional
+    public void deleteTestCase(Long problemId, Long testCaseId) {
+        TestCase testCase = testCaseRepository.findById(testCaseId)
+                .orElseThrow(() -> new RuntimeException("Test case not found"));
+        if (!testCase.getProblem().getId().equals(problemId)) {
+            throw new RuntimeException("Test case does not belong to the specified problem");
+        }
+        testCaseRepository.delete(testCase);
+    }
+
+    @Transactional
+    public void bulkUpdateTestCases(Long problemId, List<TestCase> testCases) {
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new RuntimeException("Problem not found"));
+        testCaseRepository.deleteByProblemId(problemId);
+        for (TestCase testCase : testCases) {
+            testCase.setProblem(problem);
+            validateTestCaseFormat(testCase.getInputData(), testCase.getExpectedOutput());
+            testCaseRepository.save(testCase);
+        }
+    }
+
+    @Transactional
+    public void addCodeTemplate(Long problemId, CodeTemplate codeTemplate) {
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new RuntimeException("Problem not found"));
+        codeTemplate.setProblem(problem);
+        codeTemplateRepository.save(codeTemplate);
+    }
+
+    @Transactional
+    public void updateCodeTemplate(Long problemId, Long templateId, CodeTemplate updatedCodeTemplate) {
+        CodeTemplate existingCodeTemplate = codeTemplateRepository.findById(templateId)
+                .orElseThrow(() -> new RuntimeException("Code template not found"));
+        if (!existingCodeTemplate.getProblem().getId().equals(problemId)) {
+            throw new RuntimeException("Code template does not belong to the specified problem");
+        }
+        existingCodeTemplate.setLanguage(updatedCodeTemplate.getLanguage());
+        existingCodeTemplate.setTemplateCode(updatedCodeTemplate.getTemplateCode());
+        codeTemplateRepository.save(existingCodeTemplate);
+    }
+
+    @Transactional
+    public void deleteCodeTemplate(Long problemId, Long templateId) {
+        CodeTemplate codeTemplate = codeTemplateRepository.findById(templateId)
+                .orElseThrow(() -> new RuntimeException("Code template not found"));
+        if (!codeTemplate.getProblem().getId().equals(problemId)) {
+            throw new RuntimeException("Code template does not belong to the specified problem");
+        }
+        codeTemplateRepository.delete(codeTemplate);
     }
 }

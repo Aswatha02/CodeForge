@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import ContestManagement from "./ContestManagement"
 
 export default function UserDashboard({ onLogout }) {
   const [user, setUser] = useState(null)
@@ -20,16 +21,44 @@ export default function UserDashboard({ onLogout }) {
       setUser(JSON.parse(userProfile))
     }
 
-    // Mock user stats (replace with API call)
-    setUserStats({
-      problemsSolved: 24,
-      totalSubmissions: 156,
-      accuracy: 65.4,
-      rank: 1247,
-      easy: 15,
-      medium: 8,
-      hard: 1
-    })
+    // Fetch user stats from API
+    const fetchUserStats = async () => {
+      try {
+        const token = localStorage.getItem("token")
+        const response = await fetch("http://localhost:8080/api/users/me/stats", {
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json"
+          }
+        })
+        if (response.ok) {
+          const stats = await response.json()
+          setUserStats({
+            problemsSolved: stats.problemsSolved || 0,
+            totalSubmissions: stats.totalSubmissions || 0,
+            accuracy: stats.accuracy || 0,
+            rank: stats.rank || 0,
+            easy: stats.easy || 0,
+            medium: stats.medium || 0,
+            hard: stats.hard || 0
+          })
+        }
+      } catch (error) {
+        console.error("Failed to fetch user stats:", error)
+        // Fallback to mock data if API fails
+        setUserStats({
+          problemsSolved: 0,
+          totalSubmissions: 0,
+          accuracy: 0,
+          rank: 0,
+          easy: 0,
+          medium: 0,
+          hard: 0
+        })
+      }
+    }
+
+    fetchUserStats()
   }, [])
 
   if (!user) {
@@ -51,7 +80,7 @@ export default function UserDashboard({ onLogout }) {
         <span className="text-text-muted">{solved}/{total}</span>
       </div>
       <div className="w-full bg-surface-light rounded-full h-2">
-        <div 
+        <div
           className={`h-2 rounded-full ${color}`}
           style={{ width: `${(solved / total) * 100}%` }}
         ></div>
@@ -150,23 +179,23 @@ export default function UserDashboard({ onLogout }) {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <div className="bg-surface rounded-lg p-6 border border-border">
                 <h3 className="text-xl font-bold text-text mb-4">Progress by Difficulty</h3>
-                <ProgressBar 
-                  label="Easy" 
-                  solved={userStats.easy} 
-                  total={50} 
-                  color="bg-success" 
+                <ProgressBar
+                  label="Easy"
+                  solved={userStats.easy}
+                  total={50}
+                  color="bg-success"
                 />
-                <ProgressBar 
-                  label="Medium" 
-                  solved={userStats.medium} 
-                  total={100} 
-                  color="bg-warning" 
+                <ProgressBar
+                  label="Medium"
+                  solved={userStats.medium}
+                  total={100}
+                  color="bg-warning"
                 />
-                <ProgressBar 
-                  label="Hard" 
-                  solved={userStats.hard} 
-                  total={50} 
-                  color="bg-error" 
+                <ProgressBar
+                  label="Hard"
+                  solved={userStats.hard}
+                  total={50}
+                  color="bg-error"
                 />
               </div>
 
@@ -182,11 +211,11 @@ export default function UserDashboard({ onLogout }) {
                   ].map((activity, index) => (
                     <div key={index} className="flex items-center justify-between py-2 border-b border-border last:border-b-0">
                       <div className="flex items-center space-x-3">
-                        <span className={`text-xs px-2 py-1 rounded ${
+                        <span className={`text-xs px-2 py-1 rounded ${(
                           activity.difficulty === 'Easy' ? 'bg-success/20 text-success' :
                           activity.difficulty === 'Medium' ? 'bg-warning/20 text-warning' :
                           activity.difficulty === 'Hard' ? 'bg-error/20 text-error' : 'bg-primary/20 text-primary'
-                        }`}>
+                        )}`}>
                           {activity.action}
                         </span>
                         <span className="text-text font-medium">{activity.problem}</span>
@@ -221,7 +250,7 @@ export default function UserDashboard({ onLogout }) {
 
         {activeTab === "problems" && (
           <div className="bg-surface rounded-lg p-6 border border-border">
-            <h3 className="text-xl font-bold text-text mb-4">Problem Sets</h3>
+           <h3 className="text-xl font-bold text-text mb-4">Problem Sets</h3>
             <p className="text-text-muted">Problem sets and practice interface coming soon...</p>
           </div>
         )}
@@ -234,10 +263,7 @@ export default function UserDashboard({ onLogout }) {
         )}
 
         {activeTab === "contests" && (
-          <div className="bg-surface rounded-lg p-6 border border-border">
-            <h3 className="text-xl font-bold text-text mb-4">Contests</h3>
-            <p className="text-text-muted">Contest participation and results coming soon...</p>
-          </div>
+          <ContestManagement />
         )}
 
         {activeTab === "profile" && (

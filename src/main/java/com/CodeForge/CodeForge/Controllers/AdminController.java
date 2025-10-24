@@ -1,25 +1,44 @@
 package com.CodeForge.CodeForge.Controllers;
 
-import com.CodeForge.CodeForge.model.*;
-import com.CodeForge.CodeForge.services.*;
-import com.CodeForge.CodeForge.dto.*;
-import com.CodeForge.CodeForge.repository.UserRepository;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Optional;
-
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.ArrayList;
-import java.util.Set;
-import java.util.HashSet;
-import java.util.stream.Collectors;
+import com.CodeForge.CodeForge.dto.CodeTemplateRequest;
+import com.CodeForge.CodeForge.dto.ProblemRequest;
+import com.CodeForge.CodeForge.dto.TestCaseRequest;
+import com.CodeForge.CodeForge.model.Category;
+import com.CodeForge.CodeForge.model.CodeTemplate;
+import com.CodeForge.CodeForge.model.Contest;
+import com.CodeForge.CodeForge.model.Problem;
+import com.CodeForge.CodeForge.model.Submission;
+import com.CodeForge.CodeForge.model.TestCase;
+import com.CodeForge.CodeForge.model.User;
+import com.CodeForge.CodeForge.services.CategoryService;
+import com.CodeForge.CodeForge.services.ContestService;
+import com.CodeForge.CodeForge.services.ProblemService;
+import com.CodeForge.CodeForge.services.SubmissionService;
+import com.CodeForge.CodeForge.services.UserService;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -102,19 +121,25 @@ public class AdminController {
     public ResponseEntity<List<Map<String, Object>>> getUsers(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String role,
-            @RequestParam(required = false) String status) {
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false) String sortOrder,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
 
         try {
-            List<User> users = userService.getUsersWithFilters(search, role, status);
+            List<User> users = userService.getUsersWithFilters(search, role, status, sortBy, sortOrder, page, size);
             List<Map<String, Object>> userDTOs = users.stream().map(user -> {
                 Map<String, Object> userMap = new HashMap<>();
                 userMap.put("id", user.getId());
                 userMap.put("username", user.getUsername());
                 userMap.put("email", user.getEmail());
                 userMap.put("role", user.getRole().name());
-                // Assuming User has an 'enabled' field - adjust based on your User entity
+                userMap.put("status", user.getStatus().name());
                 userMap.put("joinDate", user.getCreatedAt() != null ? user.getCreatedAt().toString() : "N/A");
+                userMap.put("lastLogin", user.getLastLogin() != null ? user.getLastLogin().toString() : "Never");
                 userMap.put("submissionCount", submissionService.getUserSubmissionCount(user.getId()));
+                userMap.put("problemsSolved", submissionService.getUserAcceptedSubmissionCount(user.getId()));
                 return userMap;
             }).collect(Collectors.toList());
 
@@ -142,6 +167,118 @@ public class AdminController {
             return ResponseEntity.ok().build();
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Failed to delete user: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/users/{userId}/profile")
+    public ResponseEntity<Map<String, Object>> getUserProfile(@PathVariable Long userId) {
+        try {
+            User user = userService.findById(userId);
+            if (user == null) {
+                return ResponseEntity.notFound().build();
+            }
+
+            Map<String, Object> profile = new HashMap<>();
+            profile.put("id", user.getId());
+            profile.put("username", user.getUsername());
+            profile.put("email", user.getEmail());
+            profile.put("role", user.getRole().name());
+            profile.put("status", user.getStatus().name());
+            profile.put("joinDate", user.getCreatedAt() != null ? user.getCreatedAt().toString() : "N/A");
+            profile.put("lastLogin", user.getLastLogin() != null ? user.getLastLogin().toString() : "Never");
+
+            // Stats
+            profile.put("totalSubmissions", submissionService.getUserSubmissionCount(user.getId()));
+            profile.put("problemsSolved", submissionService.getUserAcceptedSubmissionCount(user.getId()));
+            profile.put("rank", userService.getUserRank(user.getId()));
+
+            // Recent activity
+            List<Map<String, Object>> recentActivity = new ArrayList<>();
+            List<Submission> recentSubmissions = submissionService.getRecentSubmissionsByUser(user.getId(), 10);
+            for (Submission submission : recentSubmissions) {
+                Map<String, Object> activity = new HashMap<>();
+                activity.put("id", submission.getId());
+                activity.put("problem", submission.getProblem().getTitle());
+                activity.put("status", submission.getStatus().name());
+                activity.put("time", formatTimeAgo(submission.getSubmittedAt()));
+                recentActivity.add(activity);
+            }
+            profile.put("recentActivity", recentActivity);
+
+            return ResponseEntity.ok(profile);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).build();
+        }
+    }
+
+    @PutMapping("/users/{userId}/status")
+    public ResponseEntity<?> updateUserStatus(@PathVariable Long userId, @RequestBody Map<String, String> request) {
+        try {
+            String status = request.get("status");
+            userService.updateUserStatus(userId, status);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Failed to update user status: " + e.getMessage());
+        }
+    }
+
+    @PutMapping("/users/{userId}/activate")
+    public ResponseEntity<?> activateUser(@PathVariable Long userId, @RequestBody Map<String, Object> request) {
+        try {
+            Boolean activateObj = (Boolean) request.get("activate");
+            if (activateObj == null) {
+                return ResponseEntity.badRequest().body("Missing or invalid 'activate' parameter");
+            }
+            boolean activate = Boolean.TRUE.equals(activateObj);
+            userService.activateUser(userId, activate);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            if (e.getMessage() != null && e.getMessage().contains("User not found")) {
+                return ResponseEntity.notFound().build();
+            }
+            return ResponseEntity.badRequest().body("Failed to update user activation: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/users/{userId}/reset-progress")
+    public ResponseEntity<?> resetUserProgress(@PathVariable Long userId) {
+        try {
+            userService.resetUserProgress(userId);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Failed to reset user progress: " + e.getMessage());
+        }
+    }
+
+    @PutMapping("/users/{userId}/details")
+    public ResponseEntity<?> updateUserDetails(@PathVariable Long userId, @RequestBody Map<String, String> request) {
+        try {
+            String email = request.get("email");
+            String role = request.get("role");
+            String password = request.get("password");
+            String status = request.get("status");
+
+            userService.updateUserDetails(userId, email, role, password, status);
+
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Failed to update user details: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/users/stats")
+    public ResponseEntity<Map<String, Object>> getUserStats() {
+        try {
+            Map<String, Object> stats = new HashMap<>();
+            stats.put("totalUsers", userService.getTotalUsers());
+            stats.put("activeUsers", userService.getActiveUsersCount());
+            stats.put("bannedUsers", userService.getBannedUsersCount());
+            stats.put("newUsersThisWeek", userService.getNewUsersThisWeek());
+            stats.put("newUsersThisMonth", userService.getNewUsersThisMonth());
+            stats.put("userGrowthData", userService.getUserGrowthData());
+            return ResponseEntity.ok(stats);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).build();
         }
     }
 
@@ -197,7 +334,8 @@ public ResponseEntity<List<Map<String, Object>>> getProblems(
 
         return ResponseEntity.ok(problemDTOs);
     } catch (Exception e) {
-        e.printStackTrace(); // Add logging for debugging
+        // Log error without printing stack trace
+        System.err.println("Error in getProblems: " + e.getMessage());
         return ResponseEntity.status(500).build();
     }
 }
@@ -216,6 +354,29 @@ public ResponseEntity<List<Map<String, Object>>> getProblems(
             problem.setMemoryLimitMb(problemRequest.getMemoryLimitMb());
             problem.setDifficulty(problemRequest.getDifficulty());
 
+            // Set additional fields from ProblemRequest
+            if (problemRequest.getConstraints() != null) {
+                problem.setConstraints(problemRequest.getConstraints());
+            }
+            if (problemRequest.getPoints() != null) {
+                problem.setPoints(problemRequest.getPoints());
+            }
+            if (problemRequest.getTags() != null) {
+                problem.setTags(problemRequest.getTags());
+            }
+            if (problemRequest.getIsPrivate() != null) {
+                problem.setIsPrivate(problemRequest.getIsPrivate());
+            }
+            if (problemRequest.getFunctionName() != null) {
+                problem.setFunctionName(problemRequest.getFunctionName());
+            }
+            if (problemRequest.getParameters() != null) {
+                problem.setParameters(problemRequest.getParameters());
+            }
+            if (problemRequest.getReturnType() != null) {
+                problem.setReturnType(problemRequest.getReturnType());
+            }
+
             // Set categories if provided
             if (problemRequest.getCategoryIds() != null && !problemRequest.getCategoryIds().isEmpty()) {
                 Set<Category> categories = new HashSet<>();
@@ -228,31 +389,6 @@ public ResponseEntity<List<Map<String, Object>>> getProblems(
                 problem.setCategories(categories);
             }
 
-            // Set test cases if provided
-            if (problemRequest.getTestCases() != null && !problemRequest.getTestCases().isEmpty()) {
-                List<TestCase> testCases = new ArrayList<>();
-                for (TestCaseRequest tcRequest : problemRequest.getTestCases()) {
-                    TestCase testCase = new TestCase();
-                    testCase.setInputData(tcRequest.getInputData());
-                    testCase.setExpectedOutput(tcRequest.getExpectedOutput());
-                    testCase.setIsSample(tcRequest.getIsSample() != null ? tcRequest.getIsSample() : false);
-                    testCases.add(testCase);
-                }
-                problem.setTestCases(testCases);
-            }
-
-            // Set code templates if provided
-            if (problemRequest.getCodeTemplates() != null && !problemRequest.getCodeTemplates().isEmpty()) {
-                List<CodeTemplate> codeTemplates = new ArrayList<>();
-                for (CodeTemplateRequest ctRequest : problemRequest.getCodeTemplates()) {
-                    CodeTemplate codeTemplate = new CodeTemplate();
-                    codeTemplate.setLanguage(CodeTemplate.Language.valueOf(ctRequest.getLanguage().toUpperCase()));
-                    codeTemplate.setTemplate(ctRequest.getTemplate());
-                    codeTemplates.add(codeTemplate);
-                }
-                problem.setCodeTemplates(codeTemplates);
-            }
-
             // Get current authenticated admin user ID as creator
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
             String username = authentication.getName();
@@ -260,6 +396,30 @@ public ResponseEntity<List<Map<String, Object>>> getProblems(
             Long creatorId = creator.getId();
 
             Problem createdProblem = problemService.createProblem(problem, creatorId);
+
+            // Add test cases after problem creation
+            if (problemRequest.getTestCases() != null && !problemRequest.getTestCases().isEmpty()) {
+                for (TestCaseRequest tcRequest : problemRequest.getTestCases()) {
+                    TestCase testCase = new TestCase();
+                    testCase.setInputData(tcRequest.getInputData());
+                    testCase.setExpectedOutput(tcRequest.getExpectedOutput());
+                    testCase.setIsSample(tcRequest.getIsSample() != null ? tcRequest.getIsSample() : false);
+                    testCase.setExplanation(tcRequest.getExplanation());
+                    testCase.setTestCaseName(tcRequest.getTestCaseName());
+                    problemService.addTestCase(createdProblem.getId(), testCase);
+                }
+            }
+
+            // Add code templates after problem creation
+            if (problemRequest.getCodeTemplates() != null && !problemRequest.getCodeTemplates().isEmpty()) {
+                for (CodeTemplateRequest ctRequest : problemRequest.getCodeTemplates()) {
+                    CodeTemplate codeTemplate = new CodeTemplate();
+                    codeTemplate.setLanguage(CodeTemplate.Language.valueOf(ctRequest.getLanguage().toUpperCase()));
+                    codeTemplate.setTemplateCode(ctRequest.getVisibleCode());
+                    codeTemplate.setHiddenWrapperCode(ctRequest.getHiddenCode());
+                    problemService.addCodeTemplate(createdProblem.getId(), codeTemplate);
+                }
+            }
             return ResponseEntity.ok(createdProblem);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Failed to create problem: " + e.getMessage());
@@ -282,9 +442,22 @@ public ResponseEntity<List<Map<String, Object>>> getProblems(
         try {
             // Adjust based on your ProblemService method signature
             problemService.deleteProblem(problemId);
-            return ResponseEntity.ok().build();
-        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of("message", "Problem deleted successfully"));
+        } catch (RuntimeException e) {
+            // Handle specific business logic exceptions
+            if (e.getMessage() != null) {
+                if (e.getMessage().contains("Problem not found")) {
+                    return ResponseEntity.notFound().build();
+                } else if (e.getMessage().contains("Not authorized")) {
+                    return ResponseEntity.status(403).body("Not authorized to delete this problem");
+                }
+            }
+            // Handle database constraint violations or other runtime exceptions
             return ResponseEntity.badRequest().body("Failed to delete problem: " + e.getMessage());
+        } catch (Exception e) {
+            // Handle any other unexpected exceptions
+            System.err.println("Unexpected error deleting problem " + problemId + ": " + e.getMessage());
+            return ResponseEntity.status(500).body("An unexpected error occurred while deleting the problem");
         }
     }
 
@@ -296,6 +469,176 @@ public ResponseEntity<List<Map<String, Object>>> getProblems(
             return ResponseEntity.ok().build();
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Failed to update problem status: " + e.getMessage());
+        }
+    }
+
+    // ==================== DETAILED PROBLEM MANAGEMENT ENDPOINTS ====================
+
+    @GetMapping("/problems/{problemId}/details")
+    public ResponseEntity<Map<String, Object>> getProblemDetails(@PathVariable Long problemId) {
+        try {
+            Optional<Problem> problemOpt = problemService.getProblemById(problemId);
+            if (problemOpt.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            Problem problem = problemOpt.get();
+
+            Map<String, Object> details = new HashMap<>();
+            details.put("id", problem.getId());
+            details.put("title", problem.getTitle());
+            details.put("slug", problem.getSlug());
+            details.put("description", problem.getDescription());
+            details.put("inputFormat", problem.getInputFormat());
+            details.put("outputFormat", problem.getOutputFormat());
+            details.put("timeLimitMs", problem.getTimeLimitMs());
+            details.put("memoryLimitMb", problem.getMemoryLimitMb());
+            details.put("difficulty", problem.getDifficulty().name());
+            details.put("status", problem.getStatus().name());
+            details.put("constraints", problem.getConstraints());
+            details.put("points", problem.getPoints());
+            details.put("tags", problem.getTags());
+
+            // Categories
+            List<String> categoryNames = problem.getCategories().stream()
+                    .map(Category::getName)
+                    .collect(Collectors.toList());
+            details.put("categories", categoryNames);
+
+            // Test cases with visibility
+            List<Map<String, Object>> testCases = problem.getTestCases().stream().map(tc -> {
+                Map<String, Object> tcMap = new HashMap<>();
+                tcMap.put("id", tc.getId());
+                tcMap.put("inputData", tc.getInputData());
+                tcMap.put("expectedOutput", tc.getExpectedOutput());
+                tcMap.put("isSample", tc.getIsSample());
+                tcMap.put("explanation", tc.getExplanation());
+                tcMap.put("testCaseName", tc.getTestCaseName());
+                return tcMap;
+            }).collect(Collectors.toList());
+            details.put("testCases", testCases);
+
+            // Code templates
+            List<Map<String, Object>> codeTemplates = problem.getCodeTemplates().stream().map(ct -> {
+                Map<String, Object> ctMap = new HashMap<>();
+                ctMap.put("id", ct.getId());
+                ctMap.put("language", ct.getLanguage().name());
+                ctMap.put("templateCode", ct.getTemplateCode());
+                return ctMap;
+            }).collect(Collectors.toList());
+            details.put("codeTemplates", codeTemplates);
+
+            return ResponseEntity.ok(details);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).build();
+        }
+    }
+
+    @PostMapping("/problems/{problemId}/test-cases")
+    public ResponseEntity<?> addTestCase(@PathVariable Long problemId, @RequestBody TestCaseRequest request) {
+        try {
+            TestCase testCase = new TestCase();
+            testCase.setInputData(request.getInputData());
+            testCase.setExpectedOutput(request.getExpectedOutput());
+            testCase.setIsSample(request.getIsSample() != null ? request.getIsSample() : false);
+            testCase.setExplanation(request.getExplanation());
+            testCase.setTestCaseName(request.getTestCaseName());
+
+            problemService.addTestCase(problemId, testCase);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Failed to add test case: " + e.getMessage());
+        }
+    }
+
+    @PutMapping("/problems/{problemId}/test-cases/{testCaseId}")
+    public ResponseEntity<?> updateTestCase(@PathVariable Long problemId, @PathVariable Long testCaseId,
+                                           @RequestBody TestCaseRequest request) {
+        try {
+            TestCase testCase = new TestCase();
+            testCase.setId(testCaseId);
+            testCase.setInputData(request.getInputData());
+            testCase.setExpectedOutput(request.getExpectedOutput());
+            testCase.setIsSample(request.getIsSample() != null ? request.getIsSample() : false);
+            testCase.setExplanation(request.getExplanation());
+            testCase.setTestCaseName(request.getTestCaseName());
+
+            problemService.updateTestCase(problemId, testCaseId, testCase);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Failed to update test case: " + e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/problems/{problemId}/test-cases/{testCaseId}")
+    public ResponseEntity<?> deleteTestCase(@PathVariable Long problemId, @PathVariable Long testCaseId) {
+        try {
+            problemService.deleteTestCase(problemId, testCaseId);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Failed to delete test case: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/problems/{problemId}/test-cases/bulk")
+    public ResponseEntity<?> bulkUpdateTestCases(@PathVariable Long problemId,
+                                                @RequestBody List<TestCaseRequest> requests) {
+        try {
+            List<TestCase> testCases = requests.stream().map(req -> {
+                TestCase tc = new TestCase();
+                tc.setInputData(req.getInputData());
+                tc.setExpectedOutput(req.getExpectedOutput());
+                tc.setIsSample(req.getIsSample() != null ? req.getIsSample() : false);
+                tc.setExplanation(req.getExplanation());
+                tc.setTestCaseName(req.getTestCaseName());
+                return tc;
+            }).collect(Collectors.toList());
+
+            problemService.bulkUpdateTestCases(problemId, testCases);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Failed to bulk update test cases: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/problems/{problemId}/code-templates")
+    public ResponseEntity<?> addCodeTemplate(@PathVariable Long problemId, @RequestBody CodeTemplateRequest request) {
+        try {
+            CodeTemplate codeTemplate = new CodeTemplate();
+            codeTemplate.setLanguage(CodeTemplate.Language.valueOf(request.getLanguage().toUpperCase()));
+            codeTemplate.setTemplateCode(request.getVisibleCode());
+            codeTemplate.setHiddenWrapperCode(request.getHiddenCode());
+
+            problemService.addCodeTemplate(problemId, codeTemplate);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Failed to add code template: " + e.getMessage());
+        }
+    }
+
+    @PutMapping("/problems/{problemId}/code-templates/{templateId}")
+    public ResponseEntity<?> updateCodeTemplate(@PathVariable Long problemId, @PathVariable Long templateId,
+                                               @RequestBody CodeTemplateRequest request) {
+        try {
+            CodeTemplate codeTemplate = new CodeTemplate();
+            codeTemplate.setId(templateId);
+            codeTemplate.setLanguage(CodeTemplate.Language.valueOf(request.getLanguage().toUpperCase()));
+            codeTemplate.setTemplateCode(request.getVisibleCode());
+            codeTemplate.setHiddenWrapperCode(request.getHiddenCode());
+
+            problemService.updateCodeTemplate(problemId, templateId, codeTemplate);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Failed to update code template: " + e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/problems/{problemId}/code-templates/{templateId}")
+    public ResponseEntity<?> deleteCodeTemplate(@PathVariable Long problemId, @PathVariable Long templateId) {
+        try {
+            problemService.deleteCodeTemplate(problemId, templateId);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Failed to delete code template: " + e.getMessage());
         }
     }
 
@@ -450,6 +793,46 @@ public ResponseEntity<List<Map<String, Object>>> getProblems(
     @PostMapping("/contests")
     public ResponseEntity<?> createContest(@RequestBody Contest contest) {
         try {
+            // Get current authenticated admin user
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            String username = authentication.getName();
+            User creator = userService.findByUsername(username);
+
+            if (creator == null) {
+                return ResponseEntity.badRequest().body("Failed to create contest: Creator not found");
+            }
+
+            // Set the creator
+            contest.setCreatedBy(creator);
+
+            // Set default values if not provided
+            if (contest.getIsPublic() == null) {
+                contest.setIsPublic(true);
+            }
+            if (contest.getStatus() == null) {
+                contest.setStatus(Contest.Status.UPCOMING);
+            }
+
+            // Calculate duration if not provided
+            if (contest.getDuration() == null && contest.getStartTime() != null && contest.getEndTime() != null) {
+                long durationMinutes = java.time.Duration.between(contest.getStartTime(), contest.getEndTime()).toMinutes();
+                contest.setDuration((int) durationMinutes);
+            }
+
+            // Validate required fields
+            if (contest.getTitle() == null || contest.getTitle().trim().isEmpty()) {
+                return ResponseEntity.badRequest().body("Failed to create contest: Title is required");
+            }
+            if (contest.getStartTime() == null) {
+                return ResponseEntity.badRequest().body("Failed to create contest: Start time is required");
+            }
+            if (contest.getEndTime() == null) {
+                return ResponseEntity.badRequest().body("Failed to create contest: End time is required");
+            }
+            if (contest.getDuration() == null || contest.getDuration() <= 0) {
+                return ResponseEntity.badRequest().body("Failed to create contest: Valid duration is required");
+            }
+
             Contest createdContest = contestService.createContest(contest);
             return ResponseEntity.ok(createdContest);
         } catch (Exception e) {
@@ -457,15 +840,29 @@ public ResponseEntity<List<Map<String, Object>>> getProblems(
         }
     }
 
+    @PutMapping("/contests/{contestId}")
+    public ResponseEntity<?> updateContest(@PathVariable Long contestId, @RequestBody Contest contest) {
+        try {
+            Contest updatedContest = contestService.updateContest(contestId, contest);
+            return ResponseEntity.ok(updatedContest);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Failed to update contest: " + e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/contests/{contestId}")
+    public ResponseEntity<?> deleteContest(@PathVariable Long contestId) {
+        try {
+            contestService.deleteContest(contestId);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Failed to delete contest: " + e.getMessage());
+        }
+    }
+
     // ==================== UTILITY METHODS ====================
 
-    private String getCategoryName(Problem problem) {
-        // Problem has categories (Set<Category>), not a single category
-        if (problem.getCategories() != null && !problem.getCategories().isEmpty()) {
-            return problem.getCategories().iterator().next().getName();
-        }
-        return "Uncategorized";
-    }
+
 
     private String formatTimeAgo(java.time.LocalDateTime dateTime) {
         // Simple time ago formatter implementation

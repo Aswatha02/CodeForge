@@ -1,20 +1,15 @@
 package com.CodeForge.CodeForge.dto;
 
-import com.CodeForge.CodeForge.model.Problem;
-import com.CodeForge.CodeForge.model.CodeTemplate;
-import com.CodeForge.CodeForge.model.Category;
-import com.CodeForge.CodeForge.model.TestCase;
-import com.CodeForge.CodeForge.model.User;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.stream.Collectors;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+
+import com.CodeForge.CodeForge.model.Problem;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class ProblemResponseDTO {
     private Long id;
@@ -34,11 +29,19 @@ public class ProblemResponseDTO {
     private List<CodeTemplateDTO> codeTemplates;
     private List<TestCaseDTO> testCases;
 
-    
+
     // ADDED: Function signature fields
     private String functionName;
     private List<Map<String, String>> parameters;
     private String returnType;
+
+    // ADDED: Additional fields
+    private String constraints;
+    private Integer points;
+    private String tags;
+    private String exampleInput;
+    private String exampleOutput;
+    private Boolean isPrivate;
 
     public ProblemResponseDTO(Problem problem) {
         this.id = problem.getId();
@@ -53,16 +56,25 @@ public class ProblemResponseDTO {
         this.status = problem.getStatus().name();
         this.createdAt = problem.getCreatedAt();
         this.updatedAt = problem.getUpdatedAt();
+
+        // ADDED: Additional fields mapping
+        this.constraints = problem.getConstraints();
+        this.points = problem.getPoints();
+        this.tags = problem.getTags();
+        this.exampleInput = problem.getExampleInput();
+        this.exampleOutput = problem.getExampleOutput();
         
+        this.isPrivate = problem.getIsPrivate();
+
         // ADDED: Function signature mapping
         this.functionName = problem.getFunctionName();
         this.returnType = problem.getReturnType();
-        
+
         // Parse parameters JSON string to List<Map>
         try {
             ObjectMapper mapper = new ObjectMapper();
             if (problem.getParameters() != null && !problem.getParameters().trim().isEmpty()) {
-                this.parameters = mapper.readValue(problem.getParameters(), 
+                this.parameters = mapper.readValue(problem.getParameters(),
                     new TypeReference<List<Map<String, String>>>() {});
             } else {
                 // Default parameter if none provided
@@ -166,4 +178,23 @@ public class ProblemResponseDTO {
 
     public String getReturnType() { return returnType; }
     public void setReturnType(String returnType) { this.returnType = returnType; }
+
+    // ADDED: Getters and Setters for additional fields
+    public String getConstraints() { return constraints; }
+    public void setConstraints(String constraints) { this.constraints = constraints; }
+
+    public Integer getPoints() { return points; }
+    public void setPoints(Integer points) { this.points = points; }
+
+    public String getTags() { return tags; }
+    public void setTags(String tags) { this.tags = tags; }
+
+    public String getExampleInput() { return exampleInput; }
+    public void setExampleInput(String exampleInput) { this.exampleInput = exampleInput; }
+
+    public String getExampleOutput() { return exampleOutput; }
+    public void setExampleOutput(String exampleOutput) { this.exampleOutput = exampleOutput; }
+
+    public Boolean getIsPrivate() { return isPrivate; }
+    public void setIsPrivate(Boolean isPrivate) { this.isPrivate = isPrivate; }
 }

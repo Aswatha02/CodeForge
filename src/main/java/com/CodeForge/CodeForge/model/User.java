@@ -1,14 +1,29 @@
 package com.CodeForge.CodeForge.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import jakarta.persistence.*;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OneToOne;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 
 @Entity
@@ -29,15 +44,24 @@ public class User {
     @Column(unique = true, nullable = false)
     private String email;
 
-    @NotBlank(message = "Password is required")
-    @Size(min = 6, message = "Password must be at least 6 characters")
+    @Transient
+    @JsonProperty("password")
+    private String rawPassword;
+
     @Column(nullable = false)
-    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY) // CHANGED THIS LINE
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String passwordHash;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role = Role.USER;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, columnDefinition = "varchar(255) default 'ACTIVE'")
+    private Status status = Status.ACTIVE;
+
+    @Column(name = "last_login")
+    private LocalDateTime lastLogin;
 
     @JsonIgnore
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
@@ -61,6 +85,10 @@ public class User {
         USER, ADMIN, PROBLEM_SETTER
     }
 
+    public enum Status {
+        ACTIVE, INACTIVE, BANNED
+    }
+
     @PreUpdate
     public void preUpdate() {
         this.updatedAt = LocalDateTime.now();
@@ -79,12 +107,28 @@ public class User {
         return email;
     }
 
+    public String getRawPassword() {
+        return rawPassword;
+    }
+
+    public void setRawPassword(String rawPassword) {
+        this.rawPassword = rawPassword;
+    }
+
     public String getPasswordHash() {
         return passwordHash;
     }
 
     public Role getRole() {
         return role;
+    }
+
+    public Status getStatus() {
+        return status;
+    }
+
+    public LocalDateTime getLastLogin() {
+        return lastLogin;
     }
 
     public UserProgress getUserProgress() {
@@ -126,6 +170,14 @@ public class User {
 
     public void setRole(Role role) {
         this.role = role;
+    }
+
+    public void setStatus(Status status) {
+        this.status = status;
+    }
+
+    public void setLastLogin(LocalDateTime lastLogin) {
+        this.lastLogin = lastLogin;
     }
 
     public void setUserProgress(UserProgress userProgress) {

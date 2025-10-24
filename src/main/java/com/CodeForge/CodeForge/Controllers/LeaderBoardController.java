@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.CodeForge.CodeForge.Exception.ContestNotFoundException;
-import com.CodeForge.CodeForge.Exception.UserNotAuthorizedException;
 import com.CodeForge.CodeForge.model.ContestParticipant;
 import com.CodeForge.CodeForge.model.User;
 import com.CodeForge.CodeForge.services.LeaderboardService;
@@ -28,10 +27,7 @@ public class LeaderBoardController {
             @PathVariable("contestId") Long contestId,
             @AuthenticationPrincipal User user) {
 
-        if (user.getRole() != User.Role.ADMIN && user.getRole() != User.Role.PROBLEM_SETTER) {
-            throw new UserNotAuthorizedException("view leaderboard");
-        }
-
+        // Allow all authenticated users to view leaderboard
         try {
             List<ContestParticipant> leaderboard = leaderboardService.getLeaderboard(contestId);
             return ResponseEntity.ok(leaderboard);
@@ -46,10 +42,7 @@ public class LeaderBoardController {
             @PathVariable("userId") Long userId,
             @AuthenticationPrincipal User user) {
 
-        if (user.getRole() != User.Role.ADMIN && user.getRole() != User.Role.PROBLEM_SETTER) {
-            throw new UserNotAuthorizedException("view user rank in leaderboard");
-        }
-
+        // Allow all authenticated users to view user rank
         try {
             ContestParticipant participant = leaderboardService.getUserRankInContest(contestId, userId);
             if (participant == null) {

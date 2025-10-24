@@ -1,17 +1,17 @@
 package com.CodeForge.CodeForge.repository;
 
-import com.CodeForge.CodeForge.model.Problem;
-import com.CodeForge.CodeForge.model.Submission;
-import com.CodeForge.CodeForge.model.User;
+import java.time.LocalDateTime;
+import java.util.List;
+
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-import org.springframework.data.jpa.repository.Modifying;
 
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Optional;
+import com.CodeForge.CodeForge.model.Problem;
+import com.CodeForge.CodeForge.model.Submission;
+import com.CodeForge.CodeForge.model.User;
 
 @Repository
 public interface SubmissionRepository extends JpaRepository<Submission, Long> {
@@ -52,4 +52,7 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     Long countAcceptedSubmissionsByProblemId(@Param("problemId") Long problemId);
 
     List<Submission> findTop10ByOrderBySubmittedAtDesc();
+
+    @Query("SELECT s FROM Submission s WHERE s.user = :user ORDER BY s.submittedAt DESC")
+    List<Submission> findByUserOrderBySubmittedAtDesc(@Param("user") User user);
 }

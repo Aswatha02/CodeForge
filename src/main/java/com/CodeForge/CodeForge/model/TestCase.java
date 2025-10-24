@@ -32,6 +32,10 @@ public class TestCase {
     @Column(name = "test_case_name")
     private String testCaseName;
 
+    // NEW: Weight for partial scoring (optional)
+    @Column(name = "weight", nullable = true)
+    private Integer weight = 1; // Default weight of 1
+
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "problem_id", nullable = false)
@@ -60,6 +64,10 @@ public class TestCase {
 
     public String getTestCaseName() {
         return this.testCaseName;
+    }
+
+    public Integer getWeight() {
+        return this.weight;
     }
 
     public Problem getProblem() {
@@ -91,8 +99,12 @@ public class TestCase {
         this.testCaseName = testCaseName;
     }
 
-    public void setProblem(Problem problem) { 
-        this.problem = problem; 
+    public void setWeight(Integer weight) {
+        this.weight = weight;
+    }
+
+    public void setProblem(Problem problem) {
+        this.problem = problem;
     }
 
     // equals and hashCode methods
@@ -119,6 +131,7 @@ public class TestCase {
                 ", isSample=" + isSample +
                 ", explanation='" + explanation + '\'' +
                 ", testCaseName='" + testCaseName + '\'' +
+                ", weight=" + weight +
                 '}';
     }
 }

@@ -1,17 +1,32 @@
 package com.CodeForge.CodeForge.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonManagedReference;
-
-import jakarta.persistence.*;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
-
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 @Entity
 @Table(name = "problems")
@@ -52,6 +67,23 @@ public class Problem {
     @Column(name = "memory_limit_mb", nullable = false)
     private Integer memoryLimitMb = 256; // MB
 
+    // Additional constraints and metadata
+    @Column(columnDefinition = "TEXT")
+    private String constraints; // Additional problem constraints
+
+    @Column(nullable = true)
+    private Integer points = 100; // Points awarded for solving
+
+    @Column(columnDefinition = "TEXT")
+    private String tags; // Comma-separated tags for categorization
+
+    // Example input and output for display
+    @Column(columnDefinition = "TEXT")
+    private String exampleInput;
+
+    @Column(columnDefinition = "TEXT")
+    private String exampleOutput;
+
     // Function signature for the problem
     @NotBlank(message = "Function name is required")
     @Column(name = "function_name", nullable = false)
@@ -74,6 +106,9 @@ public class Problem {
     @Column(nullable = false)
     private Status status = Status.ACTIVE;
 
+    @Column(nullable = false)
+    private boolean isPrivate = false;
+
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "creator_id", nullable = false)
@@ -87,17 +122,18 @@ public class Problem {
     )
     private Set<Category> categories = new HashSet<>();
 
-    @OneToMany(mappedBy = "problem", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "problem", cascade = {CascadeType.MERGE, CascadeType.REMOVE}, fetch = FetchType.LAZY)
     @JsonManagedReference
     private List<CodeTemplate> codeTemplates = new ArrayList<>();
 
-    @OneToMany(mappedBy = "problem", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "problem", cascade = {CascadeType.MERGE, CascadeType.REMOVE}, fetch = FetchType.LAZY)
     @JsonManagedReference
     private List<TestCase> testCases = new ArrayList<>();
 
     @JsonIgnore
-    @OneToMany(mappedBy = "problem", fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "problem",cascade = CascadeType.ALL ,orphanRemoval = true,fetch = FetchType.LAZY)
     private List<Submission> submissions = new ArrayList<>();
+
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
@@ -206,8 +242,32 @@ public class Problem {
         return this.updatedAt; 
     }
 
-    public Status getStatus() { 
-        return this.status; 
+    public Status getStatus() {
+        return this.status;
+    }
+
+    public String getConstraints() {
+        return this.constraints;
+    }
+
+    public Integer getPoints() {
+        return this.points;
+    }
+
+    public String getTags() {
+        return this.tags;
+    }
+
+    public String getExampleInput() {
+        return this.exampleInput;
+    }
+
+    public String getExampleOutput() {
+        return this.exampleOutput;
+    }
+
+    public Boolean getIsPrivate() {
+        return this.isPrivate;
     }
 
     // Complete Setters
@@ -289,5 +349,29 @@ public class Problem {
 
     public void setStatus(Status status) {
         this.status = status;
+    }
+
+    public void setConstraints(String constraints) {
+        this.constraints = constraints;
+    }
+
+    public void setPoints(Integer points) {
+        this.points = points;
+    }
+
+    public void setTags(String tags) {
+        this.tags = tags;
+    }
+
+    public void setExampleInput(String exampleInput) {
+        this.exampleInput = exampleInput;
+    }
+
+    public void setExampleOutput(String exampleOutput) {
+        this.exampleOutput = exampleOutput;
+    }
+
+    public void setIsPrivate(Boolean isPrivate) {
+        this.isPrivate = isPrivate;
     }
 }
