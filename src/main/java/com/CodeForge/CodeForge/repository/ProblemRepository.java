@@ -1,16 +1,16 @@
 package com.CodeForge.CodeForge.repository;
 
-import com.CodeForge.CodeForge.model.Problem;
-import com.CodeForge.CodeForge.model.Problem.Difficulty;
+import java.util.List;
+import java.util.Optional;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
-import java.util.Optional;
+import com.CodeForge.CodeForge.model.Problem;
+import com.CodeForge.CodeForge.model.Problem.Difficulty;
 
 @Repository
 public interface ProblemRepository extends JpaRepository<Problem, Long> {
@@ -24,7 +24,7 @@ public interface ProblemRepository extends JpaRepository<Problem, Long> {
     @Query("SELECT p FROM Problem p WHERE p.slug = :slug")
     Optional<Problem> findBySlugWithDetails(@Param("slug") String slug);
 
-    @EntityGraph(attributePaths = {"categories", "codeTemplates", "testCases", "creator"})
+    @EntityGraph(attributePaths = {"categories", "creator"})
     @Query("SELECT p FROM Problem p WHERE p.status = com.CodeForge.CodeForge.model.Problem$Status.ACTIVE")
     List<Problem> findAllActiveWithDetails();
 

@@ -128,4 +128,75 @@ export const contestAPI = {
   }
 };
 
+export const userAPI = {
+
+  //problems
+  getProblems: () => api.get('/problems'),
+  getProblemById: (id) => api.get(`/problems/${id}`),
+
+  // User profile and stats
+  getUserProfile: (userId) => api.get(`/users/${userId}`),
+  updateUserProfile: (userId, data) => api.put(`/users/${userId}`, data),
+  getUserStats: () => api.get('/users/me/stats'),
+
+  // User submissions
+  submitSolution: (submissionData) => api.post('/submissions', submissionData),
+  getUserSubmissions: (userId) => api.get(`/submissions/user/${userId}`),
+  getSubmissionById: (id) => api.get(`/submissions/${id}`),
+  getUserSubmissions: (filters) => api.get('/users/me/submissions', { params: filters }),
+  getUserSubmissionsByProblem: (problemId) => api.get(`/users/me/problems/${problemId}/submissions`),
+
+  // User contests
+  getUserContests: () => api.get('/users/me/contests'),
+  getActiveContest: () => api.get('/users/me/active-contest'),
+  getContests: () => api.get('/contests'),
+  getContestById: (id) => api.get(`/contests/${id}`),
+  joinContest: (contestId) => api.post(`/contests/${contestId}/join`),
+
+  // User progress
+  getUserProgress: () => api.get('/users/me/progress'),
+  updateUserProgress: (progressData) => api.put('/users/me/progress', progressData),
+
+  // Leaderboard
+  getLeaderboard: () => api.get('/leaderboard'),
+  getContestLeaderboard: (contestId) => api.get(`/leaderboard/contest/${contestId}`),
+
+  // Code Execution
+  runCode: (executionData) => api.post('/execute', executionData),
+  debugCode: (debugData) => api.post('/debug', debugData),
+
+  // Categories
+  getCategories: () => api.get('/categories')
+};
+
+export const problemAPI = {
+  // Problem listing and details
+  getAllProblems: (filters) => api.get('/problems', { params: filters }),
+  getProblem: (problemId) => api.get(`/problems/${problemId}`),
+  getProblemBySlug: (slug) => api.get(`/problems/slug/${slug}`),
+
+  // Problem search and filtering
+  searchProblems: (params) => api.get('/problems/search', { params }),
+  getProblemsByCategory: (categoryId) => api.get(`/problems/category/${categoryId}`),
+  getProblemsByDifficulty: (difficulty) => api.get(`/problems/difficulty/${difficulty}`),
+
+  // Problem submissions
+  submitProblem: (problemId, submissionData) => api.post(`/problems/${problemId}/submissions`, submissionData),
+
+  // Code templates
+  getCodeTemplates: (problemId) => api.get(`/problems/${problemId}/templates`),
+};
+
+export const submissionAPI = {
+  // Submission management
+  getSubmissionsByUserAndProblem: (userId, problemId) => api.get(`/users/${userId}/problems/${problemId}/submissions`),
+  getSubmissionsByContestAndUser: (contestId, userId) => api.get(`/contests/${contestId}/users/${userId}/submissions`),
+};
+
+export const executionAPI = {
+  // Code execution
+  runCode: (executionData) => api.post('/execute', executionData),
+  submitSolution: (submissionData) => api.post('/submissions', submissionData),
+};
+
 export default api;

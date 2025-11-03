@@ -1,24 +1,33 @@
 package com.CodeForge.CodeForge.Controllers;
 
-import com.CodeForge.CodeForge.dto.ProblemRequest;
-import com.CodeForge.CodeForge.dto.ProblemResponseDTO;
-import com.CodeForge.CodeForge.model.Problem;
-import com.CodeForge.CodeForge.model.User;
-import com.CodeForge.CodeForge.services.ProblemService;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.CodeForge.CodeForge.dto.ProblemRequest;
+import com.CodeForge.CodeForge.dto.ProblemResponseDTO;
+import com.CodeForge.CodeForge.model.CodeTemplate;
+import com.CodeForge.CodeForge.model.Problem;
+import com.CodeForge.CodeForge.model.User;
+import com.CodeForge.CodeForge.services.ProblemService;
+
 @RestController
 @RequestMapping("/api/problems")
-@CrossOrigin(origins = "*")
 public class ProblemController {
 
     @Autowired
@@ -190,6 +199,17 @@ public class ProblemController {
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/{problemId}/templates")
+    public ResponseEntity<List<CodeTemplate>> getCodeTemplates(@PathVariable Long problemId) {
+        try {
+            List<CodeTemplate> templates = problemService.getCodeTemplates(problemId);
+            return ResponseEntity.ok(templates);
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();

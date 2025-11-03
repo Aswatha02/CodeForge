@@ -109,14 +109,12 @@ public class ProblemService {
     @Transactional(readOnly = true)
     public List<Problem> getAllProblems() {
         List<Problem> problems = problemRepository.findAllActiveWithDetails();
-        
-        // Force initialization of lazy collections within transaction
+
+        // Force initialization of categories (already eagerly fetched)
         problems.forEach(problem -> {
-            problem.getCodeTemplates().size();
-            problem.getTestCases().size();
             problem.getCategories().size();
         });
-        
+
         return problems;
     }
 
@@ -517,5 +515,12 @@ public class ProblemService {
             throw new RuntimeException("Code template does not belong to the specified problem");
         }
         codeTemplateRepository.delete(codeTemplate);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CodeTemplate> getCodeTemplates(Long problemId) {
+        Problem problem = problemRepository.findById(problemId)
+                .orElseThrow(() -> new RuntimeException("Problem not found"));
+        return codeTemplateRepository.findByProblem(problem);
     }
 }

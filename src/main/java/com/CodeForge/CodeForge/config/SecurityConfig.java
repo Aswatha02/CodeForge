@@ -1,7 +1,6 @@
 package com.CodeForge.CodeForge.config;
 
 import java.util.Arrays;
-import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
@@ -58,6 +57,7 @@ public class SecurityConfig {
                 // Public endpoints - problem browsing
                 .requestMatchers("/api/problems").permitAll()
                 .requestMatchers("/api/problems/*").permitAll()
+                .requestMatchers("/api/problems/*/templates").permitAll()
                 .requestMatchers("/api/problems/search/**").permitAll()
                 .requestMatchers("/api/problems/category/**").permitAll()
                 
@@ -89,7 +89,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(List.of("*")); // Use patterns instead of specific origins
+        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000", "http://localhost:5174"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setAllowCredentials(true);

@@ -1,12 +1,17 @@
-# Contest Management Edit/Delete Implementation
+# TODO: Add API Endpoint for Retrieving Code Templates
 
-## Tasks
-- [x] Add updateContest and deleteContest methods to adminAPI in api.js
-- [ ] Add PUT and DELETE endpoints for contests in AdminController.java
-- [ ] Add onClick handlers and modal logic for edit/delete in AdminDashboard.jsx
-- [ ] Test the functionality
+## Completed Tasks
+- [x] Add `getCodeTemplates` method to `ProblemService.java`
+- [x] Add `getCodeTemplates` endpoint to `ProblemController.java`
+- [x] Import `CodeTemplate` class in `ProblemController.java`
+- [x] Compile the project to check for errors
 
-## Progress
-- [x] Analysis completed
-- [x] Plan approved by user
-- [x] TODO.md created
+## Pending Tasks
+- [ ] Restart the Spring Boot application for changes to take effect
+- [ ] Test the new endpoint to ensure it works correctly
+- [ ] Verify that the endpoint returns the expected JSON response
+
+## Notes
+- The endpoint is accessible at `GET /api/problems/{problemId}/templates`
+- It returns a list of `CodeTemplate` objects for the specified problem ID
+- Error handling is included for exceptions
