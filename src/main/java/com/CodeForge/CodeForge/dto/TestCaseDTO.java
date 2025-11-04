@@ -7,12 +7,18 @@ public class TestCaseDTO {
     private String inputData;
     private String expectedOutput;
     private Boolean isSample;
+    private String explanation;
+    private String testCaseName;
+    private Integer weight;
 
     public TestCaseDTO(TestCase testCase) {
         this.id = testCase.getId();
         this.inputData = testCase.getInputData();
         this.expectedOutput = testCase.getExpectedOutput();
         this.isSample = testCase.getIsSample();
+        this.explanation = testCase.getExplanation();
+        this.testCaseName = testCase.getTestCaseName();
+        this.weight = testCase.getWeight();
     }
 
     // Getters and Setters
@@ -27,4 +33,13 @@ public class TestCaseDTO {
 
     public Boolean getIsSample() { return isSample; }
     public void setIsSample(Boolean isSample) { this.isSample = isSample; }
+
+    public String getExplanation() { return explanation; }
+    public void setExplanation(String explanation) { this.explanation = explanation; }
+
+    public String getTestCaseName() { return testCaseName; }
+    public void setTestCaseName(String testCaseName) { this.testCaseName = testCaseName; }
+
+    public Integer getWeight() { return weight; }
+    public void setWeight(Integer weight) { this.weight = weight; }
 }

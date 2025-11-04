@@ -95,7 +95,74 @@ public class ProblemService {
         
         return savedProblem;
     }
-
+    @Transactional
+public Problem createProblem(ProblemRequest problemRequest, Long creatorId) {
+    User creator = userRepository.findById(creatorId)
+            .orElseThrow(() -> new RuntimeException("Creator not found"));
+    
+    if (problemRepository.findBySlug(problemRequest.getSlug()).isPresent()) {
+        throw new RuntimeException("Problem slug already exists");
+    }
+    
+    // Create new Problem entity from ProblemRequest
+    Problem problem = new Problem();
+    problem.setTitle(problemRequest.getTitle());
+    problem.setSlug(problemRequest.getSlug());
+    problem.setDescription(problemRequest.getDescription());
+    problem.setInputFormat(problemRequest.getInputFormat());
+    problem.setOutputFormat(problemRequest.getOutputFormat());
+    problem.setTimeLimitMs(problemRequest.getTimeLimitMs());
+    problem.setMemoryLimitMb(problemRequest.getMemoryLimitMb());
+    problem.setDifficulty(problemRequest.getDifficulty());
+    problem.setFunctionName(problemRequest.getFunctionName());
+    problem.setParameters(problemRequest.getParameters());
+    problem.setReturnType(problemRequest.getReturnType());
+    problem.setConstraints(problemRequest.getConstraints());
+    problem.setPoints(problemRequest.getPoints());
+    problem.setTags(problemRequest.getTags());
+    problem.setExampleInput(problemRequest.getExampleInput());
+    problem.setExampleOutput(problemRequest.getExampleOutput());
+    problem.setIsPrivate(problemRequest.getIsPrivate());
+    problem.setCreator(creator);
+    
+    Problem savedProblem = problemRepository.save(problem);
+    
+    // Handle categories
+    if (problemRequest.getCategoryIds() != null && !problemRequest.getCategoryIds().isEmpty()) {
+        Set<Category> categories = categoryRepository.findAllById(problemRequest.getCategoryIds())
+                .stream()
+                .collect(Collectors.toSet());
+        savedProblem.setCategories(categories);
+    }
+    
+    // Handle code templates
+    if (problemRequest.getCodeTemplates() != null && !problemRequest.getCodeTemplates().isEmpty()) {
+        for (CodeTemplateRequest ctRequest : problemRequest.getCodeTemplates()) {
+            CodeTemplate codeTemplate = new CodeTemplate();
+            codeTemplate.setLanguage(CodeTemplate.Language.valueOf(ctRequest.getLanguage().toUpperCase()));
+            codeTemplate.setTemplateCode(ctRequest.getTemplateCode());
+            codeTemplate.setVisibleCode(ctRequest.getVisibleCode());
+            codeTemplate.setHiddenCode(ctRequest.getHiddenCode());
+            codeTemplate.setProblem(savedProblem);
+            codeTemplateRepository.save(codeTemplate);
+        }
+    }
+    
+    // Handle test cases
+    if (problemRequest.getTestCases() != null && !problemRequest.getTestCases().isEmpty()) {
+        for (TestCaseRequest tcRequest : problemRequest.getTestCases()) {
+            TestCase testCase = new TestCase();
+            testCase.setInputData(tcRequest.getInputData());
+            testCase.setExpectedOutput(tcRequest.getExpectedOutput());
+            testCase.setIsSample(tcRequest.getIsSample() != null ? tcRequest.getIsSample() : false);
+            testCase.setExplanation(tcRequest.getExplanation());
+            testCase.setProblem(savedProblem);
+            testCaseRepository.save(testCase);
+        }
+    }
+    
+    return problemRepository.save(savedProblem);
+}
     private void validateTestCaseFormat(String inputData, String expectedOutput) {
         try {
             ObjectMapper mapper = new ObjectMapper();
@@ -424,6 +491,8 @@ public class ProblemService {
                 CodeTemplate codeTemplate = new CodeTemplate();
                 codeTemplate.setLanguage(CodeTemplate.Language.valueOf(ctRequest.getLanguage().toUpperCase()));
                 codeTemplate.setTemplateCode(ctRequest.getTemplateCode());
+                codeTemplate.setVisibleCode(ctRequest.getVisibleCode());
+                codeTemplate.setHiddenCode(ctRequest.getHiddenCode());
                 codeTemplate.setProblem(existingProblem);
                 codeTemplateRepository.save(codeTemplate);
             }

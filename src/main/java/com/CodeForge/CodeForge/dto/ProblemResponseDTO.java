@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 
 import com.CodeForge.CodeForge.model.Problem;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class ProblemResponseDTO {
@@ -29,13 +30,12 @@ public class ProblemResponseDTO {
     private List<CodeTemplateDTO> codeTemplates;
     private List<TestCaseDTO> testCases;
 
-
-    // ADDED: Function signature fields
+    // Function signature fields
     private String functionName;
     private List<Map<String, String>> parameters;
     private String returnType;
 
-    // ADDED: Additional fields
+    // Additional fields
     private String constraints;
     private Integer points;
     private String tags;
@@ -43,7 +43,23 @@ public class ProblemResponseDTO {
     private String exampleOutput;
     private Boolean isPrivate;
 
+    // Edit form compatibility fields
+    private List<Long> categoryIds;
+    private String parametersJson;
+    private String categoryString;
+
+    // ADD: Default constructor for Jackson
+    public ProblemResponseDTO() {
+        // Initialize collections to avoid null pointers
+        this.parameters = new ArrayList<>();
+        this.categories = new ArrayList<>();
+        this.codeTemplates = new ArrayList<>();
+        this.testCases = new ArrayList<>();
+    }
+
     public ProblemResponseDTO(Problem problem) {
+        this(); // Call default constructor to initialize collections
+        
         this.id = problem.getId();
         this.title = problem.getTitle();
         this.slug = problem.getSlug();
@@ -57,70 +73,83 @@ public class ProblemResponseDTO {
         this.createdAt = problem.getCreatedAt();
         this.updatedAt = problem.getUpdatedAt();
 
-        // ADDED: Additional fields mapping
+        // Additional fields mapping
         this.constraints = problem.getConstraints();
         this.points = problem.getPoints();
         this.tags = problem.getTags();
         this.exampleInput = problem.getExampleInput();
         this.exampleOutput = problem.getExampleOutput();
-        
         this.isPrivate = problem.getIsPrivate();
 
-        // ADDED: Function signature mapping
+        // Function signature mapping
         this.functionName = problem.getFunctionName();
         this.returnType = problem.getReturnType();
 
-        // Parse parameters JSON string to List<Map>
-        try {
-            ObjectMapper mapper = new ObjectMapper();
-            if (problem.getParameters() != null && !problem.getParameters().trim().isEmpty()) {
-                this.parameters = mapper.readValue(problem.getParameters(),
-                    new TypeReference<List<Map<String, String>>>() {});
-            } else {
-                // Default parameter if none provided
-                this.parameters = new ArrayList<>();
-                Map<String, String> defaultParam = new HashMap<>();
-                defaultParam.put("name", "input");
-                defaultParam.put("type", "any");
-                this.parameters.add(defaultParam);
-            }
-        } catch (Exception e) {
-            // Fallback to default parameters if parsing fails
-            this.parameters = new ArrayList<>();
-            Map<String, String> defaultParam = new HashMap<>();
-            defaultParam.put("name", "input");
-            defaultParam.put("type", "any");
-            this.parameters.add(defaultParam);
-        }
+        // Enhanced parameters parsing
+        parseParametersSafely(problem.getParameters());
         
         // Convert creator to DTO
         if (problem.getCreator() != null) {
             this.creator = new UserDTO(problem.getCreator());
         }
         
-        // Convert categories to DTOs
-        if (problem.getCategories() != null) {
-            this.categories = problem.getCategories().stream()
-                    .map(CategoryDTO::new)
-                    .collect(Collectors.toList());
-        }
-        
-        // Convert code templates to DTOs
-        if (problem.getCodeTemplates() != null) {
-            this.codeTemplates = problem.getCodeTemplates().stream()
-                    .map(CodeTemplateDTO::new)
-                    .collect(Collectors.toList());
-        }
-        
-        // Convert test cases to DTOs
-        if (problem.getTestCases() != null) {
-            this.testCases = problem.getTestCases().stream()
-                    .map(TestCaseDTO::new)
-                    .collect(Collectors.toList());
+        // Null-safe collection mapping
+        this.categories = problem.getCategories() != null ?
+            problem.getCategories().stream()
+                .map(CategoryDTO::new)
+                .collect(Collectors.toList()) : new ArrayList<>();
+
+        this.codeTemplates = problem.getCodeTemplates() != null ?
+            problem.getCodeTemplates().stream()
+                .map(CodeTemplateDTO::new)
+                .collect(Collectors.toList()) : new ArrayList<>();
+
+        this.testCases = problem.getTestCases() != null ?
+            problem.getTestCases().stream()
+                .map(TestCaseDTO::new)
+                .collect(Collectors.toList()) : new ArrayList<>();
+
+        // Set edit form compatibility fields
+        this.categoryIds = problem.getCategories() != null ?
+            problem.getCategories().stream()
+                .map(category -> category.getId())
+                .collect(Collectors.toList()) : new ArrayList<>();
+
+        this.parametersJson = problem.getParameters();
+        this.categoryString = problem.getCategories() != null ?
+            problem.getCategories().stream()
+                .map(category -> category.getName())
+                .collect(Collectors.joining(", ")) : "";
+    }
+
+    private void parseParametersSafely(String parametersJson) {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+            
+            if (parametersJson != null && !parametersJson.trim().isEmpty()) {
+                String paramsJson = parametersJson.trim();
+                this.parameters = mapper.readValue(paramsJson, new TypeReference<List<Map<String, String>>>() {});
+            } else {
+                this.parameters = createDefaultParameters();
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to parse parameters JSON: " + e.getMessage());
+            System.err.println("Raw parameters string: " + parametersJson);
+            this.parameters = createDefaultParameters();
         }
     }
 
-    // Getters and Setters for existing fields
+    private List<Map<String, String>> createDefaultParameters() {
+        List<Map<String, String>> defaultParams = new ArrayList<>();
+        Map<String, String> defaultParam = new HashMap<>();
+        defaultParam.put("name", "input");
+        defaultParam.put("type", "any");
+        defaultParams.add(defaultParam);
+        return defaultParams;
+    }
+
+    // Getters and Setters (keep all your existing ones)
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -164,12 +193,11 @@ public class ProblemResponseDTO {
     public void setCategories(List<CategoryDTO> categories) { this.categories = categories; }
 
     public List<CodeTemplateDTO> getCodeTemplates() { return codeTemplates; }
-    public void setCodeTemplates(List<CodeTemplateDTO> codeTemplates) { this.codeTemplates = codeTemplates; }
+    public void setCodeTemplate(List<CodeTemplateDTO> codeTemplates) { this.codeTemplates = codeTemplates; }
 
     public List<TestCaseDTO> getTestCases() { return testCases; }
     public void setTestCases(List<TestCaseDTO> testCases) { this.testCases = testCases; }
 
-    // ADDED: Getters and Setters for function signature fields
     public String getFunctionName() { return functionName; }
     public void setFunctionName(String functionName) { this.functionName = functionName; }
 
@@ -179,7 +207,6 @@ public class ProblemResponseDTO {
     public String getReturnType() { return returnType; }
     public void setReturnType(String returnType) { this.returnType = returnType; }
 
-    // ADDED: Getters and Setters for additional fields
     public String getConstraints() { return constraints; }
     public void setConstraints(String constraints) { this.constraints = constraints; }
 
@@ -197,4 +224,14 @@ public class ProblemResponseDTO {
 
     public Boolean getIsPrivate() { return isPrivate; }
     public void setIsPrivate(Boolean isPrivate) { this.isPrivate = isPrivate; }
+
+    // New getters and setters for edit form compatibility fields
+    public List<Long> getCategoryIds() { return categoryIds; }
+    public void setCategoryIds(List<Long> categoryIds) { this.categoryIds = categoryIds; }
+
+    public String getParametersJson() { return parametersJson; }
+    public void setParametersJson(String parametersJson) { this.parametersJson = parametersJson; }
+
+    public String getCategoryString() { return categoryString; }
+    public void setCategoryString(String categoryString) { this.categoryString = categoryString; }
 }

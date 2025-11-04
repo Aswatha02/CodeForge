@@ -44,9 +44,6 @@ public class ContestService {
     @Autowired
     private ProblemRepository problemRepository;
 
-    @Autowired
-    private LeaderboardService leaderboardService;
-
     // 1. Contest Management
     
     public Contest createContest(Contest contest) {

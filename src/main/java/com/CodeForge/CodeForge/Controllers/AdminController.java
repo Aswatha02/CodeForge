@@ -9,6 +9,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -26,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.CodeForge.CodeForge.dto.CodeTemplateRequest;
 import com.CodeForge.CodeForge.dto.ProblemRequest;
+import com.CodeForge.CodeForge.dto.ProblemResponseDTO;
 import com.CodeForge.CodeForge.dto.TestCaseRequest;
 import com.CodeForge.CodeForge.model.Category;
 import com.CodeForge.CodeForge.model.CodeTemplate;
@@ -39,6 +42,8 @@ import com.CodeForge.CodeForge.services.ContestService;
 import com.CodeForge.CodeForge.services.ProblemService;
 import com.CodeForge.CodeForge.services.SubmissionService;
 import com.CodeForge.CodeForge.services.UserService;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -59,6 +64,8 @@ public class AdminController {
 
     @Autowired
     private ContestService contestService;
+
+    private static final Logger logger = LoggerFactory.getLogger(AdminController.class);
 
     // ==================== DASHBOARD ENDPOINTS ====================
 
@@ -113,6 +120,16 @@ public class AdminController {
         activity.add(0, systemActivity);
 
         return ResponseEntity.ok(activity);
+    }
+
+    @GetMapping("/welcome")
+    public ResponseEntity<Map<String, Object>> welcome(HttpServletRequest request) {
+        logger.info("Request received: {} {}", request.getMethod(), request.getRequestURI());
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "Welcome to the CodeForge Admin API!");
+
+        return ResponseEntity.ok(response);
     }
 
     // ==================== USER MANAGEMENT ENDPOINTS ====================
@@ -340,6 +357,58 @@ public ResponseEntity<List<Map<String, Object>>> getProblems(
     }
 }
 
+    @GetMapping("/categories/{categoryId}/problems")
+    public ResponseEntity<?> getProblemsByCategory(@PathVariable Long categoryId) {
+        try {
+            List<Problem> problems = problemService.getProblemsByCategory(categoryId);
+            if (problems == null) {
+                problems = new ArrayList<>();
+            }
+
+            List<Map<String, Object>> problemDTOs = problems.stream().map(problem -> {
+                Map<String, Object> problemMap = new HashMap<>();
+                problemMap.put("id", problem.getId());
+                problemMap.put("title", problem.getTitle() != null ? problem.getTitle() : "Untitled");
+                problemMap.put("difficulty", problem.getDifficulty() != null ? problem.getDifficulty().name() : "UNKNOWN");
+
+                // Get categories as list of names instead of single category
+                List<String> categoryNames = new ArrayList<>();
+                if (problem.getCategories() != null) {
+                    categoryNames = problem.getCategories().stream()
+                            .filter(cat -> cat != null && cat.getName() != null)
+                            .map(Category::getName)
+                            .collect(Collectors.toList());
+                }
+
+                problemMap.put("categories", categoryNames);
+                problemMap.put("categoryCount", categoryNames.size());
+
+                // Use "category" field for frontend compatibility (comma-separated string)
+                problemMap.put("category", String.join(", ", categoryNames));
+
+                // Add status field
+                problemMap.put("status", problem.getStatus() != null ? problem.getStatus().name() : "UNKNOWN");
+
+                problemMap.put("submissionCount", submissionService.getProblemSubmissionCount(problem.getId()));
+
+                // Calculate acceptance rate
+                long totalSubmissions = submissionService.getProblemSubmissionCount(problem.getId());
+                long acceptedSubmissions = submissionService.getProblemAcceptedSubmissionCount(problem.getId());
+                String acceptanceRate = totalSubmissions > 0 ?
+                    String.format("%.1f%%", (acceptedSubmissions * 100.0) / totalSubmissions) : "0%";
+                problemMap.put("acceptanceRate", acceptanceRate);
+
+                return problemMap;
+            }).collect(Collectors.toList());
+
+            return ResponseEntity.ok(problemDTOs);
+        } catch (Exception e) {
+            // Log error without printing stack trace
+            System.err.println("Error in getProblemsByCategory: " + e.getMessage());
+            return ResponseEntity.status(500).build();
+        }
+    }
+
     @PostMapping("/problems")
     public ResponseEntity<?> createProblem(@RequestBody ProblemRequest problemRequest) {
         try {
@@ -415,8 +484,12 @@ public ResponseEntity<List<Map<String, Object>>> getProblems(
                 for (CodeTemplateRequest ctRequest : problemRequest.getCodeTemplates()) {
                     CodeTemplate codeTemplate = new CodeTemplate();
                     codeTemplate.setLanguage(CodeTemplate.Language.valueOf(ctRequest.getLanguage().toUpperCase()));
+                    // Set visible code (what users see and edit)
+                    codeTemplate.setVisibleCode(ctRequest.getVisibleCode());
+                    // Set hidden code (execution wrapper with {{USER_CODE}} placeholder)
+                    codeTemplate.setHiddenCode(ctRequest.getHiddenCode());
+                    // For backward compatibility, set templateCode to visibleCode
                     codeTemplate.setTemplateCode(ctRequest.getVisibleCode());
-                    codeTemplate.setHiddenWrapperCode(ctRequest.getHiddenCode());
                     problemService.addCodeTemplate(createdProblem.getId(), codeTemplate);
                 }
             }
@@ -475,61 +548,25 @@ public ResponseEntity<List<Map<String, Object>>> getProblems(
     // ==================== DETAILED PROBLEM MANAGEMENT ENDPOINTS ====================
 
     @GetMapping("/problems/{problemId}/details")
-    public ResponseEntity<Map<String, Object>> getProblemDetails(@PathVariable Long problemId) {
+    public ResponseEntity<ProblemResponseDTO> getProblemDetails(@PathVariable Long problemId) {
         try {
             Optional<Problem> problemOpt = problemService.getProblemById(problemId);
             if (problemOpt.isEmpty()) {
-                return ResponseEntity.notFound().build();
+                Map<String, Object> errorResponse = new HashMap<>();
+                errorResponse.put("error", "Problem not found");
+                errorResponse.put("problemId", problemId);
+                return ResponseEntity.status(404).body(null);
             }
             Problem problem = problemOpt.get();
 
-            Map<String, Object> details = new HashMap<>();
-            details.put("id", problem.getId());
-            details.put("title", problem.getTitle());
-            details.put("slug", problem.getSlug());
-            details.put("description", problem.getDescription());
-            details.put("inputFormat", problem.getInputFormat());
-            details.put("outputFormat", problem.getOutputFormat());
-            details.put("timeLimitMs", problem.getTimeLimitMs());
-            details.put("memoryLimitMb", problem.getMemoryLimitMb());
-            details.put("difficulty", problem.getDifficulty().name());
-            details.put("status", problem.getStatus().name());
-            details.put("constraints", problem.getConstraints());
-            details.put("points", problem.getPoints());
-            details.put("tags", problem.getTags());
-
-            // Categories
-            List<String> categoryNames = problem.getCategories().stream()
-                    .map(Category::getName)
-                    .collect(Collectors.toList());
-            details.put("categories", categoryNames);
-
-            // Test cases with visibility
-            List<Map<String, Object>> testCases = problem.getTestCases().stream().map(tc -> {
-                Map<String, Object> tcMap = new HashMap<>();
-                tcMap.put("id", tc.getId());
-                tcMap.put("inputData", tc.getInputData());
-                tcMap.put("expectedOutput", tc.getExpectedOutput());
-                tcMap.put("isSample", tc.getIsSample());
-                tcMap.put("explanation", tc.getExplanation());
-                tcMap.put("testCaseName", tc.getTestCaseName());
-                return tcMap;
-            }).collect(Collectors.toList());
-            details.put("testCases", testCases);
-
-            // Code templates
-            List<Map<String, Object>> codeTemplates = problem.getCodeTemplates().stream().map(ct -> {
-                Map<String, Object> ctMap = new HashMap<>();
-                ctMap.put("id", ct.getId());
-                ctMap.put("language", ct.getLanguage().name());
-                ctMap.put("templateCode", ct.getTemplateCode());
-                return ctMap;
-            }).collect(Collectors.toList());
-            details.put("codeTemplates", codeTemplates);
-
-            return ResponseEntity.ok(details);
+            ProblemResponseDTO dto = new ProblemResponseDTO(problem);
+            return ResponseEntity.ok(dto);
         } catch (Exception e) {
-            return ResponseEntity.status(500).build();
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("error", "Internal server error");
+            errorResponse.put("message", e.getMessage() != null ? e.getMessage() : "Unknown error");
+            errorResponse.put("problemId", problemId);
+            return ResponseEntity.status(500).body(null);
         }
     }
 
@@ -600,13 +637,33 @@ public ResponseEntity<List<Map<String, Object>>> getProblems(
         }
     }
 
+    @GetMapping("/problems/{problemId}/code-templates")
+    public ResponseEntity<List<Map<String, Object>>> getCodeTemplates(@PathVariable Long problemId) {
+        try {
+            List<CodeTemplate> codeTemplates = problemService.getCodeTemplates(problemId);
+            List<Map<String, Object>> templateDTOs = codeTemplates.stream().map(ct -> {
+                Map<String, Object> templateMap = new HashMap<>();
+                templateMap.put("id", ct.getId());
+                templateMap.put("language", ct.getLanguage().name());
+                templateMap.put("templateCode", ct.getTemplateCode());
+                templateMap.put("visibleCode", ct.getVisibleCode());
+                templateMap.put("hiddenCode", ct.getHiddenCode());
+                return templateMap;
+            }).collect(Collectors.toList());
+
+            return ResponseEntity.ok(templateDTOs);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).build();
+        }
+    }
+
     @PostMapping("/problems/{problemId}/code-templates")
     public ResponseEntity<?> addCodeTemplate(@PathVariable Long problemId, @RequestBody CodeTemplateRequest request) {
         try {
             CodeTemplate codeTemplate = new CodeTemplate();
             codeTemplate.setLanguage(CodeTemplate.Language.valueOf(request.getLanguage().toUpperCase()));
             codeTemplate.setTemplateCode(request.getVisibleCode());
-            codeTemplate.setHiddenWrapperCode(request.getHiddenCode());
+            codeTemplate.setHiddenCode(request.getHiddenCode());
 
             problemService.addCodeTemplate(problemId, codeTemplate);
             return ResponseEntity.ok().build();
@@ -623,7 +680,7 @@ public ResponseEntity<List<Map<String, Object>>> getProblems(
             codeTemplate.setId(templateId);
             codeTemplate.setLanguage(CodeTemplate.Language.valueOf(request.getLanguage().toUpperCase()));
             codeTemplate.setTemplateCode(request.getVisibleCode());
-            codeTemplate.setHiddenWrapperCode(request.getHiddenCode());
+            codeTemplate.setHiddenCode(request.getHiddenCode());
 
             problemService.updateCodeTemplate(problemId, templateId, codeTemplate);
             return ResponseEntity.ok().build();

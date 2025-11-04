@@ -22,16 +22,14 @@ import com.CodeForge.CodeForge.services.SubmissionService;
 @RequestMapping("/api")
 public class SubmissionController {
 
-    @Autowired
-    private SubmissionService submissionService;
+    private final SubmissionService submissionService;
+
+    private final UserRepository userRepository;
 
     @Autowired
-    private UserRepository userRepository;
-
-    private SubmissionRequest submissionRequest;
-
-    public SubmissionController(SubmissionService submissionService) {
+    public SubmissionController(SubmissionService submissionService, UserRepository userRepository) {
         this.submissionService = submissionService;
+        this.userRepository = userRepository;
     }
 
     // Submit code for a regular problem (no contest)
@@ -100,6 +98,68 @@ public class SubmissionController {
 
         List<Submission> submissions = submissionService.getSubmissionsByContestAndUser(contestId, userId);
         return ResponseEntity.ok(submissions);
+    }
+
+    // Rerun a submission (users can only rerun their own submissions)
+    @PostMapping("/submissions/{submissionId}/rerun")
+    public ResponseEntity<?> rerunSubmission(@PathVariable Long submissionId, java.security.Principal principal) {
+        if (principal == null) {
+            return ResponseEntity.status(401).body("Authentication required");
+        }
+
+        String username = principal.getName();
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new UserNotAuthorizedException("rerun submission"));
+
+        try {
+            // Verify the submission belongs to the authenticated user
+            Submission submission = submissionService.getSubmissionById(submissionId);
+            if (submission == null) {
+                return ResponseEntity.notFound().build();
+            }
+
+            if (!submission.getUser().getId().equals(user.getId())) {
+                return ResponseEntity.status(403).body("You can only rerun your own submissions");
+            }
+
+            // Rerun the submission
+            Submission rerunResult = submissionService.rerunSubmission(submissionId);
+            return ResponseEntity.ok(rerunResult);
+
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Failed to rerun submission: " + e.getMessage());
+        }
+    }
+
+    // Get submission code (users can only view their own submission code)
+    @GetMapping("/submissions/{submissionId}/code")
+    public ResponseEntity<String> getSubmissionCode(@PathVariable Long submissionId, java.security.Principal principal) {
+        if (principal == null) {
+            return ResponseEntity.status(401).body("Authentication required");
+        }
+
+        String username = principal.getName();
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new UserNotAuthorizedException("get submission code"));
+
+        try {
+            // Verify the submission belongs to the authenticated user
+            Submission submission = submissionService.getSubmissionById(submissionId);
+            if (submission == null) {
+                return ResponseEntity.notFound().build();
+            }
+
+            if (!submission.getUser().getId().equals(user.getId())) {
+                return ResponseEntity.status(403).body("You can only view your own submission code");
+            }
+
+            // Get the submission code
+            String code = submissionService.getSubmissionCode(submissionId);
+            return ResponseEntity.ok(code);
+
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Failed to get submission code: " + e.getMessage());
+        }
     }
 }
 

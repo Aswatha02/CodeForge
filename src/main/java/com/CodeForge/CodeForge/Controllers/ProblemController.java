@@ -5,6 +5,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +32,8 @@ import com.CodeForge.CodeForge.services.ProblemService;
 @RequestMapping("/api/problems")
 public class ProblemController {
 
+    private static final Logger logger = LoggerFactory.getLogger(ProblemController.class);
+
     @Autowired
     private ProblemService problemService;
 
@@ -42,7 +46,7 @@ public class ProblemController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Error retrieving all problems", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -51,17 +55,17 @@ public class ProblemController {
     public ResponseEntity<ProblemResponseDTO> getProblemById(@PathVariable Long id) {
         try {
             Optional<Problem> problemOpt = problemService.getProblemById(id);
-            
+
             if (problemOpt.isEmpty()) {
                 return ResponseEntity.notFound().build();
             }
-            
+
             Problem problem = problemOpt.get();
             ProblemResponseDTO response = new ProblemResponseDTO(problem);
-            
+
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Error retrieving problem by ID: {}", id, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -70,42 +74,43 @@ public class ProblemController {
     public ResponseEntity<ProblemResponseDTO> getProblemBySlug(@PathVariable String slug) {
         try {
             Optional<Problem> problemOpt = problemService.getProblemBySlug(slug);
-            
+
             if (problemOpt.isEmpty()) {
                 return ResponseEntity.notFound().build();
             }
-            
+
             return ResponseEntity.ok(new ProblemResponseDTO(problemOpt.get()));
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Error retrieving problem by slug: {}", slug, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
-    @PostMapping("/admin")
-    public ResponseEntity<?> createProblem(
-            @RequestBody Problem problem,
-            @AuthenticationPrincipal User user) {
-        
-        if (user == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("message", "User not authenticated"));
-        }
-        
-        if (!User.Role.ADMIN.equals(user.getRole())) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("message", "Admin access required"));
-        }
-        
-        try {
-            Problem createdProblem = problemService.createProblem(problem, user.getId());
-            return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(new ProblemResponseDTO(createdProblem));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("message", e.getMessage()));
-        }
+    // In ProblemController.java - Fix the createProblem method
+@PostMapping("/admin")
+public ResponseEntity<?> createProblem(
+        @RequestBody ProblemRequest problemRequest, // Change from Problem to ProblemRequest
+        @AuthenticationPrincipal User user) {
+    
+    if (user == null) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("message", "User not authenticated"));
     }
+    
+    if (!User.Role.ADMIN.equals(user.getRole())) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(Map.of("message", "Admin access required"));
+    }
+    
+    try {
+        Problem createdProblem = problemService.createProblem(problemRequest, user.getId());
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(new ProblemResponseDTO(createdProblem));
+    } catch (Exception e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("message", e.getMessage()));
+    }
+}
 
     @PutMapping("/admin/{id}")
     public ResponseEntity<?> updateProblem(
@@ -161,7 +166,7 @@ public class ProblemController {
             @RequestParam(required = false) String query,
             @RequestParam(required = false) String difficulty,
             @RequestParam(required = false) Long categoryId) {
-        
+
         try {
             List<Problem> problems = problemService.searchProblems(query, difficulty, categoryId);
             List<ProblemResponseDTO> response = problems.stream()
@@ -169,7 +174,7 @@ public class ProblemController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Error searching problems with query: {}, difficulty: {}, categoryId: {}", query, difficulty, categoryId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -183,7 +188,7 @@ public class ProblemController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Error retrieving problems by category ID: {}", categoryId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -198,12 +203,46 @@ public class ProblemController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
+            logger.error("Invalid difficulty level: {}", difficulty, e);
             return ResponseEntity.badRequest().build();
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Error retrieving problems by difficulty: {}", difficulty, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
+
+@GetMapping("/admin/{id}/edit")
+public ResponseEntity<?> getProblemForEdit(@PathVariable Long id, @AuthenticationPrincipal User user) {
+    try {
+        // Authentication check
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "User not authenticated"));
+        }
+
+        if (!User.Role.ADMIN.equals(user.getRole())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Admin access required"));
+        }
+
+        // Get the problem
+        Optional<Problem> problemOpt = problemService.getProblemById(id);
+        if (problemOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        Problem problem = problemOpt.get();
+
+        // Use ProblemResponseDTO which now includes all the edit form compatibility fields
+        ProblemResponseDTO response = new ProblemResponseDTO(problem);
+
+        return ResponseEntity.ok(response);
+    } catch (Exception e) {
+        logger.error("Error fetching problem for edit with ID: {}", id, e);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("message", "Error fetching problem for edit: " + e.getMessage()));
+    }
+}
 
     @GetMapping("/{problemId}/templates")
     public ResponseEntity<List<CodeTemplate>> getCodeTemplates(@PathVariable Long problemId) {
@@ -211,7 +250,7 @@ public class ProblemController {
             List<CodeTemplate> templates = problemService.getCodeTemplates(problemId);
             return ResponseEntity.ok(templates);
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Error retrieving code templates for problem ID: {}", problemId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }

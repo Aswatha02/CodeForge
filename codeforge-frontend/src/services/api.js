@@ -55,6 +55,7 @@ export const adminAPI = {
   
   // Problems
   getProblems: (filters) => api.get('/admin/problems', { params: filters }),
+  getProblem: (problemId) => api.get(`/admin/problems/${problemId}/details`),
   createProblem: (problemData) => api.post('/admin/problems', problemData),
   updateProblem: (problemId, problemData) => api.put(`/admin/problems/${problemId}`, problemData),
   deleteProblem: (problemId) => api.delete(`/admin/problems/${problemId}`),
@@ -140,11 +141,12 @@ export const userAPI = {
   getUserStats: () => api.get('/users/me/stats'),
 
   // User submissions
-  submitSolution: (submissionData) => api.post('/submissions', submissionData),
+  submitSolution: (problemId, submissionData) => api.post(`/problems/${problemId}/submissions`, submissionData),
   getUserSubmissions: (userId) => api.get(`/submissions/user/${userId}`),
   getSubmissionById: (id) => api.get(`/submissions/${id}`),
   getUserSubmissions: (filters) => api.get('/users/me/submissions', { params: filters }),
   getUserSubmissionsByProblem: (problemId) => api.get(`/users/me/problems/${problemId}/submissions`),
+  getSubmissionsByProblem: (problemId) => api.get(`/users/me/problems/${problemId}/submissions`),
 
   // User contests
   getUserContests: () => api.get('/users/me/contests'),
@@ -196,7 +198,8 @@ export const submissionAPI = {
 export const executionAPI = {
   // Code execution
   runCode: (executionData) => api.post('/execute', executionData),
-  submitSolution: (submissionData) => api.post('/submissions', submissionData),
+  // Fix the submission endpoint
+  submitSolution: (problemId, submissionData) => api.post(`/problems/${problemId}/submissions`, submissionData),
 };
 
 export default api;

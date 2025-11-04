@@ -1,9 +1,7 @@
 package com.CodeForge.CodeForge.model;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -122,18 +120,18 @@ public class Problem {
     )
     private Set<Category> categories = new HashSet<>();
 
-    @OneToMany(mappedBy = "problem", cascade = {CascadeType.MERGE, CascadeType.REMOVE}, fetch = FetchType.LAZY)
+    // SOLUTION: Use Set instead of List and remove @Fetch annotations
+    @OneToMany(mappedBy = "problem", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
     @JsonManagedReference
-    private List<CodeTemplate> codeTemplates = new ArrayList<>();
+    private Set<CodeTemplate> codeTemplates = new HashSet<>();
 
-    @OneToMany(mappedBy = "problem", cascade = {CascadeType.MERGE, CascadeType.REMOVE}, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "problem", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
     @JsonManagedReference
-    private List<TestCase> testCases = new ArrayList<>();
+    private Set<TestCase> testCases = new HashSet<>();
 
     @JsonIgnore
-    @OneToMany(mappedBy = "problem",cascade = CascadeType.ALL ,orphanRemoval = true,fetch = FetchType.LAZY)
-    private List<Submission> submissions = new ArrayList<>();
-
+    @OneToMany(mappedBy = "problem", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
+    private Set<Submission> submissions = new HashSet<>();
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
@@ -163,6 +161,28 @@ public class Problem {
     public void removeCodeTemplate(CodeTemplate codeTemplate) {
         codeTemplates.remove(codeTemplate);
         codeTemplate.setProblem(null);
+    }
+
+    // Helper methods for test cases
+    public void addTestCase(TestCase testCase) {
+        testCases.add(testCase);
+        testCase.setProblem(this);
+    }
+
+    public void removeTestCase(TestCase testCase) {
+        testCases.remove(testCase);
+        testCase.setProblem(null);
+    }
+
+    // Helper methods for submissions
+    public void addSubmission(Submission submission) {
+        submissions.add(submission);
+        submission.setProblem(this);
+    }
+
+    public void removeSubmission(Submission submission) {
+        submissions.remove(submission);
+        submission.setProblem(null);
     }
 
     // Complete Getters
@@ -222,15 +242,15 @@ public class Problem {
         return this.categories; 
     }
 
-    public List<CodeTemplate> getCodeTemplates() { 
+    public Set<CodeTemplate> getCodeTemplates() { 
         return this.codeTemplates; 
     }
 
-    public List<TestCase> getTestCases() { 
+    public Set<TestCase> getTestCases() { 
         return this.testCases; 
     }
 
-    public List<Submission> getSubmissions() { 
+    public Set<Submission> getSubmissions() { 
         return this.submissions; 
     }
 
@@ -327,15 +347,15 @@ public class Problem {
         this.categories = categories;
     }
 
-    public void setCodeTemplates(List<CodeTemplate> codeTemplates) {
+    public void setCodeTemplates(Set<CodeTemplate> codeTemplates) {
         this.codeTemplates = codeTemplates;
     }
 
-    public void setTestCases(List<TestCase> testCases) {
+    public void setTestCases(Set<TestCase> testCases) {
         this.testCases = testCases;
     }
 
-    public void setSubmissions(List<Submission> submissions) {
+    public void setSubmissions(Set<Submission> submissions) {
         this.submissions = submissions;
     }
 

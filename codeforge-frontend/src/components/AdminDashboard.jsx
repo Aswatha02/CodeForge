@@ -103,7 +103,7 @@ export default function AdminDashboard({ onLogout }) {
     categoryIds: []
   })
 
-  // Problem Create/Edit State with Tabbed Interface
+  // Problem Create/Edit State with Tabbed Interface - FIXED INITIAL STATE
   const [showProblemModal, setShowProblemModal] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [activeProblemTab, setActiveProblemTab] = useState("details")
@@ -114,13 +114,19 @@ export default function AdminDashboard({ onLogout }) {
     inputFormat: "",
     outputFormat: "",
     difficulty: "EASY",
-    timeLimitMs: "",
-    memoryLimitMb: "",
-    functionName: "",
-    parameters: "",
-    returnType: "",
+    timeLimitMs: 2000,
+    memoryLimitMb: 256,
+    functionName: "solve",
+    parameters: '[{"name": "input", "type": "any"}]',
+    returnType: "any",
     status: "DRAFT",
     categoryIds: [],
+    constraints: "",
+    points: 100,
+    tags: "",
+    exampleInput: "",
+    exampleOutput: "",
+    isPrivate: false,
     supportedLanguages: ["JAVA", "PYTHON", "JAVASCRIPT", "C", "CPP"],
     testCases: [],
     codeTemplates: {
@@ -149,6 +155,23 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
     // Write your code here
 
 };`,
+        hiddenCode: ""
+      },
+      CPP: {
+        visibleCode: `class Solution {
+public:
+    {RETURN_TYPE} {FUNCTION_NAME}({PARAMETERS}) {
+        // Write your code here
+
+    }
+};`,
+        hiddenCode: ""
+      },
+      C: {
+        visibleCode: `{RETURN_TYPE} {FUNCTION_NAME}({PARAMETERS}) {
+    // Write your code here
+
+}`,
         hiddenCode: ""
       }
     }
@@ -509,25 +532,143 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
     setLoading(false)
   }
 
-  const handleEditProblem = (problem) => {
-    setEditingProblem(problem)
-    setEditFormData({
-      title: problem.title || "",
-      slug: problem.slug || "",
-      description: problem.description || "",
-      inputFormat: problem.inputFormat || "",
-      outputFormat: problem.outputFormat || "",
-      difficulty: problem.difficulty || "",
-      timeLimitMs: problem.timeLimitMs || "",
-      memoryLimitMb: problem.memoryLimitMb || "",
-      functionName: problem.functionName || "",
-      parameters: problem.parameters || "",
-      returnType: problem.returnType || "",
-      status: problem.status || "",
-      categoryIds: problem.categories ? problem.categories.map(cat => cat.id) : []
-    })
-    setShowEditModal(true)
+  const handleEditProblem = async (problem) => {
+  setLoading(true)
+  setError("")
+  try {
+    // Fetch full problem details from the backend
+    const response = await adminAPI.getProblem(problem.id)
+    const fullProblem = response.data
+
+    // Log raw structure to confirm keys (expand in DevTools)
+    console.log("=== EDIT PROBLEM DEBUG ===")
+    console.log("Full problem data (JSON):", JSON.stringify(fullProblem, null, 2))
+    console.log("Available keys:", Object.keys(fullProblem))
+    console.log("Function Name (camel):", fullProblem.functionName)
+    console.log("Parameters (camel):", fullProblem.parameters)
+    console.log("Return Type (camel):", fullProblem.returnType)
+    console.log("Categories:", fullProblem.categories)
+    console.log("Test Cases:", fullProblem.testCases)
+    console.log("Code Templates:", fullProblem.codeTemplates)
+    console.log("==========================")
+
+    setEditingProblem(fullProblem)
+    setIsEditing(true)
+    setActiveProblemTab("details")
+
+    // Transform problem data to match form structure (use camelCase from API)
+    const transformedData = {
+      title: fullProblem.title || "",
+      slug: fullProblem.slug || "",
+      description: fullProblem.description || "",
+      inputFormat: fullProblem.inputFormat || "",
+      outputFormat: fullProblem.outputFormat || "",
+      difficulty: fullProblem.difficulty || "EASY",
+      timeLimitMs: fullProblem.timeLimitMs || 2000,
+      memoryLimitMb: fullProblem.memoryLimitMb || 256,
+      points: fullProblem.points || 100,
+      
+      // FIXED: Use camelCase from API response
+      functionName: fullProblem.functionName || "solve",
+      parameters: fullProblem.parameters || '[{"name":"input","type":"any"}]',
+      returnType: fullProblem.returnType || "any",
+      
+      status: fullProblem.status || "DRAFT",
+      // Handle categories: API returns strings, map to IDs using categories state
+      categoryIds: fullProblem.categories 
+        ? fullProblem.categories
+            .map(catName => categories.find(cat => cat.name === catName)?.id)
+            .filter(Boolean)  // Remove undefined
+        : [],
+      constraints: fullProblem.constraints || "",
+      tags: fullProblem.tags || "",
+      exampleInput: fullProblem.exampleInput || "",
+      exampleOutput: fullProblem.exampleOutput || "",
+      isPrivate: fullProblem.isPrivate || false,
+      supportedLanguages: ["JAVA", "PYTHON", "JAVASCRIPT", "CPP", "C"],
+      // Handle testCases: Already camelCase in API
+      testCases: fullProblem.testCases || [],  // No mapping needed; direct use
+      codeTemplates: {}
+    }
+
+    // Transform codeTemplates array to object format
+    if (fullProblem.codeTemplates && Array.isArray(fullProblem.codeTemplates)) {
+      fullProblem.codeTemplates.forEach(template => {
+        transformedData.codeTemplates[template.language] = {
+          visibleCode: template.visibleCode || "",
+          hiddenCode: template.hiddenCode || ""
+        }
+      })
+    } else {
+      // Defaults if missing (use placeholders for new values)
+      transformedData.codeTemplates = {
+        JAVA: {
+          visibleCode: `public class Solution {
+    public ${transformedData.returnType} ${transformedData.functionName}(${transformedData.parameters}) {
+        // Write your code here
+
+    }
+}`,
+          hiddenCode: ""
+        },
+        PYTHON: {
+          visibleCode: `class Solution:
+    def ${transformedData.functionName}(self${transformedData.parameters}) -> ${transformedData.returnType}:
+        # Write your code here
+        pass`,
+          hiddenCode: ""
+        },
+        JAVASCRIPT: {
+          visibleCode: `/**
+ * @param {${transformedData.parameters}}
+ * @return {${transformedData.returnType}}
+ */
+var ${transformedData.functionName} = function(${transformedData.parameters}) {
+    // Write your code here
+
+};`,
+          hiddenCode: ""
+        },
+        CPP: {
+          visibleCode: `class Solution {
+public:
+    ${transformedData.returnType} ${transformedData.functionName}(${transformedData.parameters}) {
+        // Write your code here
+
+    }
+};`,
+          hiddenCode: ""
+        },
+        C: {
+          visibleCode: `${transformedData.returnType} ${transformedData.functionName}(${transformedData.parameters}) {
+    // Write your code here
+
+}`,
+          hiddenCode: ""
+        }
+      }
+    }
+
+    console.log("=== AFTER TRANSFORMATION ===")
+    console.log("Function Name in form:", transformedData.functionName)
+    console.log("Parameters in form:", transformedData.parameters)
+    console.log("Return Type in form:", transformedData.returnType)
+    console.log("Category IDs:", transformedData.categoryIds)
+    console.log("============================")
+
+    setProblemFormData(transformedData)
+    setShowProblemModal(true)
+  } catch (error) {
+    console.error("Error fetching problem details:", error)
+    console.log("Error response:", error.response?.data)
+    if (error.response?.status === 403) {
+      setError("You don't have permission to view this problem.")
+    } else {
+      setError("Failed to load problem details")
+    }
   }
+  setLoading(false)
+}
 
   const handleSaveProblemEdit = async () => {
     if (!editingProblem) return
@@ -535,16 +676,41 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
     setLoading(true)
     setError("")
     try {
-      await adminAPI.updateProblem(editingProblem.id, editFormData)
-      setShowEditModal(false)
+      // Transform codeTemplates object to array format for backend
+      const transformedData = {
+        ...problemFormData,
+        // Ensure numeric fields are numbers
+        timeLimitMs: Number(problemFormData.timeLimitMs) || 2000,
+        memoryLimitMb: Number(problemFormData.memoryLimitMb) || 256,
+        points: Number(problemFormData.points) || 100,
+        // Transform code templates
+        codeTemplates: Object.entries(problemFormData.codeTemplates).map(([language, template]) => ({
+          language,
+          visibleCode: template.visibleCode,
+          hiddenCode: template.hiddenCode
+        }))
+      }
+
+      console.log("=== UPDATING PROBLEM ===")
+      console.log("Problem ID:", editingProblem.id)
+      console.log("Data being sent:", transformedData)
+      console.log("=========================")
+
+      await adminAPI.updateProblem(editingProblem.id, transformedData)
+      setShowProblemModal(false)
+      setIsEditing(false)
       setEditingProblem(null)
       fetchProblems() // Refresh the problems list
     } catch (error) {
       console.error("Error updating problem:", error)
+      console.log("Error response:", error.response?.data)
+      
       if (error.response?.status === 403) {
         setError("You don't have permission to update problems.")
+      } else if (error.response?.data?.message) {
+        setError(`Failed to update problem: ${error.response.data.message}`)
       } else {
-        setError("Failed to update problem")
+        setError("Failed to update problem. Please check the console for details.")
       }
     }
     setLoading(false)
@@ -627,7 +793,19 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
     }
   }
 
+  // FIXED: handleCreateProblem function with proper validation and debugging
   const handleCreateProblem = async () => {
+    // Enhanced debug logging
+    console.log("=== CREATING PROBLEM - FORM DATA ===")
+    console.log("Function Name:", problemFormData.functionName)
+    console.log("Parameters:", problemFormData.parameters)
+    console.log("Return Type:", problemFormData.returnType)
+    console.log("Time Limit:", problemFormData.timeLimitMs)
+    console.log("Memory Limit:", problemFormData.memoryLimitMb)
+    console.log("Full form data:", problemFormData)
+    console.log("=====================================")
+
+    // Validation
     if (!problemFormData.title.trim()) {
       setError("Problem title is required")
       return
@@ -640,6 +818,18 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
       setError("Problem description is required")
       return
     }
+    if (!problemFormData.functionName.trim()) {
+      setError("Function name is required")
+      return
+    }
+    if (!problemFormData.parameters.trim()) {
+      setError("Parameters are required")
+      return
+    }
+    if (!problemFormData.returnType.trim()) {
+      setError("Return type is required")
+      return
+    }
 
     setLoading(true)
     setError("")
@@ -647,6 +837,11 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
       // Transform codeTemplates object to array format for backend
       const transformedData = {
         ...problemFormData,
+        // Ensure numeric fields are numbers
+        timeLimitMs: Number(problemFormData.timeLimitMs) || 2000,
+        memoryLimitMb: Number(problemFormData.memoryLimitMb) || 256,
+        points: Number(problemFormData.points) || 100,
+        // Transform code templates
         codeTemplates: Object.entries(problemFormData.codeTemplates).map(([language, template]) => ({
           language,
           visibleCode: template.visibleCode,
@@ -654,8 +849,14 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
         }))
       }
 
+      console.log("=== SENDING TO BACKEND ===")
+      console.log("Transformed data:", transformedData)
+      console.log("==========================")
+
       await adminAPI.createProblem(transformedData)
       setShowProblemModal(false)
+      
+      // Reset form with proper defaults
       setProblemFormData({
         title: "",
         slug: "",
@@ -663,34 +864,40 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
         inputFormat: "",
         outputFormat: "",
         difficulty: "EASY",
-        timeLimitMs: "",
-        memoryLimitMb: "",
-        functionName: "",
-        parameters: "",
-        returnType: "",
+        timeLimitMs: 2000,
+        memoryLimitMb: 256,
+        functionName: "solve",
+        parameters: '[{"name": "input", "type": "any"}]',
+        returnType: "any",
         status: "DRAFT",
         categoryIds: [],
-    supportedLanguages: ["JAVA", "PYTHON", "JAVASCRIPT", "CPP", "C"],
-    testCases: [],
-    codeTemplates: {
-      JAVA: {
-        visibleCode: `public class Solution {
+        constraints: "",
+        points: 100,
+        tags: "",
+        exampleInput: "",
+        exampleOutput: "",
+        isPrivate: false,
+        supportedLanguages: ["JAVA", "PYTHON", "JAVASCRIPT", "C", "CPP"],
+        testCases: [],
+        codeTemplates: {
+          JAVA: {
+            visibleCode: `public class Solution {
     public {RETURN_TYPE} {FUNCTION_NAME}({PARAMETERS}) {
         // Write your code here
 
     }
 }`,
-        hiddenCode: ""
-      },
-      PYTHON: {
-        visibleCode: `class Solution:
+            hiddenCode: ""
+          },
+          PYTHON: {
+            visibleCode: `class Solution:
     def {FUNCTION_NAME}(self{PARAMETERS}) -> {RETURN_TYPE}:
         # Write your code here
         pass`,
-        hiddenCode: ""
-      },
-      JAVASCRIPT: {
-        visibleCode: `/**
+            hiddenCode: ""
+          },
+          JAVASCRIPT: {
+            visibleCode: `/**
  * @param {PARAMETERS}
  * @return {RETURN_TYPE}
  */
@@ -698,34 +905,39 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
     // Write your code here
 
 };`,
-        hiddenCode: ""
-      },
-      CPP: {
-        visibleCode: `class Solution {
+            hiddenCode: ""
+          },
+          CPP: {
+            visibleCode: `class Solution {
 public:
     {RETURN_TYPE} {FUNCTION_NAME}({PARAMETERS}) {
         // Write your code here
 
     }
 };`,
-        hiddenCode: ""
-      },
-      C: {
-        visibleCode: `{RETURN_TYPE} {FUNCTION_NAME}({PARAMETERS}) {
+            hiddenCode: ""
+          },
+          C: {
+            visibleCode: `{RETURN_TYPE} {FUNCTION_NAME}({PARAMETERS}) {
     // Write your code here
 
 }`,
-        hiddenCode: ""
-      }
-    }
+            hiddenCode: ""
+          }
+        }
       })
+      
       fetchProblems() // Refresh the problems list
     } catch (error) {
       console.error("Error creating problem:", error)
+      console.log("Error response:", error.response?.data)
+      
       if (error.response?.status === 403) {
         setError("You don't have permission to create problems.")
+      } else if (error.response?.data?.message) {
+        setError(`Failed to create problem: ${error.response.data.message}`)
       } else {
-        setError("Failed to create problem")
+        setError("Failed to create problem. Please check the console for details.")
       }
     }
     setLoading(false)
@@ -1208,14 +1420,20 @@ public:
                     inputFormat: "",
                     outputFormat: "",
                     difficulty: "EASY",
-                    timeLimitMs: "",
-                    memoryLimitMb: "",
-                    functionName: "",
-                    parameters: "",
-                    returnType: "",
+                    timeLimitMs: 2000,
+                    memoryLimitMb: 256,
+                    functionName: "solve",
+                    parameters: '[{"name": "input", "type": "any"}]',
+                    returnType: "any",
                     status: "DRAFT",
                     categoryIds: [],
-                    supportedLanguages: ["JAVA", "PYTHON", "JAVASCRIPT"],
+                    constraints: "",
+                    points: 100,
+                    tags: "",
+                    exampleInput: "",
+                    exampleOutput: "",
+                    isPrivate: false,
+                    supportedLanguages: ["JAVA", "PYTHON", "JAVASCRIPT", "C", "CPP"],
                     testCases: [],
                     codeTemplates: {
                       JAVA: {
@@ -1243,6 +1461,23 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
     // Write your code here
 
 };`,
+                        hiddenCode: ""
+                      },
+                      CPP: {
+                        visibleCode: `class Solution {
+public:
+    {RETURN_TYPE} {FUNCTION_NAME}({PARAMETERS}) {
+        // Write your code here
+
+    }
+};`,
+                        hiddenCode: ""
+                      },
+                      C: {
+                        visibleCode: `{RETURN_TYPE} {FUNCTION_NAME}({PARAMETERS}) {
+    // Write your code here
+
+}`,
                         hiddenCode: ""
                       }
                     }
@@ -1661,122 +1896,10 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
             </div>
           )}
 
-          {showEditModal && editingProblem && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-surface rounded-lg p-6 max-w-2xl w-full mx-4 max-h-96 overflow-y-auto">
-                <h3 className="text-xl font-bold text-text mb-4">Edit Problem</h3>
-                <div className="space-y-4">
-                  <input
-                    type="text"
-                    placeholder="Title"
-                    value={editFormData.title}
-                    onChange={(e) => setEditFormData({...editFormData, title: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Slug"
-                    value={editFormData.slug}
-                    onChange={(e) => setEditFormData({...editFormData, slug: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  />
-                  <textarea
-                    placeholder="Description"
-                    value={editFormData.description}
-                    onChange={(e) => setEditFormData({...editFormData, description: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                    rows="4"
-                  />
-                  <textarea
-                    placeholder="Input Format"
-                    value={editFormData.inputFormat}
-                    onChange={(e) => setEditFormData({...editFormData, inputFormat: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                    rows="3"
-                  />
-                  <textarea
-                    placeholder="Output Format"
-                    value={editFormData.outputFormat}
-                    onChange={(e) => setEditFormData({...editFormData, outputFormat: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                    rows="3"
-                  />
-                  <select
-                    value={editFormData.difficulty}
-                    onChange={(e) => setEditFormData({...editFormData, difficulty: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  >
-                    <option value="EASY">Easy</option>
-                    <option value="MEDIUM">Medium</option>
-                    <option value="HARD">Hard</option>
-                  </select>
-                  <input
-                    type="number"
-                    placeholder="Time Limit (ms)"
-                    value={editFormData.timeLimitMs}
-                    onChange={(e) => setEditFormData({...editFormData, timeLimitMs: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  />
-                  <input
-                    type="number"
-                    placeholder="Memory Limit (MB)"
-                    value={editFormData.memoryLimitMb}
-                    onChange={(e) => setEditFormData({...editFormData, memoryLimitMb: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Function Name"
-                    value={editFormData.functionName}
-                    onChange={(e) => setEditFormData({...editFormData, functionName: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Parameters"
-                    value={editFormData.parameters}
-                    onChange={(e) => setEditFormData({...editFormData, parameters: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Return Type"
-                    value={editFormData.returnType}
-                    onChange={(e) => setEditFormData({...editFormData, returnType: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  />
-                  <select
-                    value={editFormData.status}
-                    onChange={(e) => setEditFormData({...editFormData, status: e.target.value})}
-                    className="w-full px-3 py-2 rounded-md bg-surface-light border border-border"
-                  >
-                    <option value="DRAFT">Draft</option>
-                    <option value="PUBLISHED">Published</option>
-                    <option value="ARCHIVED">Archived</option>
-                  </select>
-                </div>
-                <div className="flex justify-end space-x-3 mt-6">
-                  <button
-                    onClick={() => setShowEditModal(false)}
-                    className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSaveProblemEdit}
-                    className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md"
-                  >
-                    Save
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {showProblemModal && !isEditing && (
+          {showProblemModal && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
               <div className="bg-surface rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-                <h3 className="text-xl font-bold text-text mb-4">Create New Problem</h3>
+                <h3 className="text-xl font-bold text-text mb-4">{isEditing ? 'Edit Problem' : 'Create New Problem'}</h3>
                 <div className="mb-4">
                   <div className="flex space-x-4 border-b border-border">
                     <button
@@ -1819,10 +1942,10 @@ var {FUNCTION_NAME} = function({PARAMETERS}) {
                     Cancel
                   </button>
                   <button
-                    onClick={handleCreateProblem}
+                    onClick={isEditing ? handleSaveProblemEdit : handleCreateProblem}
                     className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md"
                   >
-                    Create
+                    {isEditing ? 'Update' : 'Create'}
                   </button>
                 </div>
               </div>

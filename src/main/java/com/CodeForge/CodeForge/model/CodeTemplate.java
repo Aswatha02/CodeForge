@@ -2,8 +2,7 @@ package com.CodeForge.CodeForge.model;
 
 import java.time.LocalDateTime;
 
-import org.hibernate.annotations.OnDelete;
-import org.hibernate.annotations.OnDeleteAction;
+import com.fasterxml.jackson.annotation.JsonBackReference;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -17,75 +16,55 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
-
 
 @Entity
-@Table(
-    name = "code_templates",
-    uniqueConstraints = {
-        @UniqueConstraint(columnNames = {"problem_id", "language"})
-    }
-)
+@Table(name = "code_templates")
 public class CodeTemplate {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "problem_id", nullable = false)
-    @OnDelete(action = OnDeleteAction.CASCADE) // ✅ Correct way to enforce ON DELETE CASCADE
-    private Problem problem;
-
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(nullable = false)
     private Language language;
 
-    @Column(name = "template_code", columnDefinition = "TEXT", nullable = false)
+    @Column(name = "template_code", columnDefinition = "TEXT")
     private String templateCode;
 
-    @Column(name = "hidden_wrapper_code", columnDefinition = "TEXT")
-    private String hiddenWrapperCode; // Hidden code used during judging to wrap user code
+    @Column(name = "visible_code", columnDefinition = "TEXT")
+    private String visibleCode;
+
+    @Column(name = "hidden_code", columnDefinition = "TEXT")
+    private String hiddenCode;
+
+    @JsonBackReference
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "problem_id", nullable = false)
+    private Problem problem;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
-    @Column(name = "updated_at", nullable = false)
+    @Column(name = "updated_at")
     private LocalDateTime updatedAt = LocalDateTime.now();
 
-    @PreUpdate
-    public void preUpdate() {
-        this.updatedAt = LocalDateTime.now();
+    public enum Language {
+        JAVA, PYTHON, JAVASCRIPT, CPP, C
     }
-
-    // Enum for supported languages
-    public static enum Language {
-    JAVA, PYTHON, CPP, JAVASCRIPT, C
-}
 
     // Constructors
     public CodeTemplate() {}
 
-    public CodeTemplate(Problem problem, Language language, String templateCode) {
-        this.problem = problem;
+    public CodeTemplate(Language language, String templateCode, Problem problem) {
         this.language = language;
         this.templateCode = templateCode;
-    }
-
-    public CodeTemplate(Problem problem, Language language, String templateCode, String hiddenWrapperCode) {
         this.problem = problem;
-        this.language = language;
-        this.templateCode = templateCode;
-        this.hiddenWrapperCode = hiddenWrapperCode;
     }
 
-    // Getters & Setters
+    // Getters and Setters
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
-
-    public Problem getProblem() { return problem; }
-    public void setProblem(Problem problem) { this.problem = problem; }
 
     public Language getLanguage() { return language; }
     public void setLanguage(Language language) { this.language = language; }
@@ -93,12 +72,23 @@ public class CodeTemplate {
     public String getTemplateCode() { return templateCode; }
     public void setTemplateCode(String templateCode) { this.templateCode = templateCode; }
 
-    public String getTemplate() { return templateCode; }
-    public void setTemplate(String template) { this.templateCode = template; }
+    public String getVisibleCode() { return visibleCode; }
+    public void setVisibleCode(String visibleCode) { this.visibleCode = visibleCode; }
 
-    public String getHiddenWrapperCode() { return hiddenWrapperCode; }
-    public void setHiddenWrapperCode(String hiddenWrapperCode) { this.hiddenWrapperCode = hiddenWrapperCode; }
+    public String getHiddenCode() { return hiddenCode; }
+    public void setHiddenCode(String hiddenCode) { this.hiddenCode = hiddenCode; }
+
+    public Problem getProblem() { return problem; }
+    public void setProblem(Problem problem) { this.problem = problem; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
     public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    @PreUpdate
+    public void preUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
 }

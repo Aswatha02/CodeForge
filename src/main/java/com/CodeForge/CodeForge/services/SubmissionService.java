@@ -16,8 +16,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.CodeForge.CodeForge.dto.ExecutionRequest;
-import com.CodeForge.CodeForge.dto.ExecutionResponse;
+import com.CodeForge.CodeForge.model.CodeTemplate;
 import com.CodeForge.CodeForge.model.Contest;
 import com.CodeForge.CodeForge.model.ContestParticipant;
 import com.CodeForge.CodeForge.model.ContestProblem;
@@ -25,6 +24,7 @@ import com.CodeForge.CodeForge.model.Problem;
 import com.CodeForge.CodeForge.model.Submission;
 import com.CodeForge.CodeForge.model.TestCase;
 import com.CodeForge.CodeForge.model.User;
+import com.CodeForge.CodeForge.repository.CodeTemplateRepository;
 import com.CodeForge.CodeForge.repository.ContestParticipantRepository;
 import com.CodeForge.CodeForge.repository.ContestProblemRepository;
 import com.CodeForge.CodeForge.repository.ContestRepository;
@@ -46,6 +46,7 @@ public class SubmissionService {
     private final ContestProblemRepository contestProblemRepository;
     private final ContestParticipantRepository contestParticipantRepository;
     private final TestCaseRepository testCaseRepository;
+    private final CodeTemplateRepository codeTemplateRepository;
     private final LeaderboardService leaderboardService;
     private final ObjectMapper objectMapper;
     private final FunctionSignatureService functionSignatureService;
@@ -58,6 +59,7 @@ public class SubmissionService {
                            ContestProblemRepository contestProblemRepository,
                            ContestParticipantRepository contestParticipantRepository,
                            TestCaseRepository testCaseRepository,
+                           CodeTemplateRepository codeTemplateRepository,
                            LeaderboardService leaderboardService,
                            FunctionSignatureService functionSignatureService,
                            ExecutionService executionService) {
@@ -68,6 +70,7 @@ public class SubmissionService {
         this.contestProblemRepository = contestProblemRepository;
         this.contestParticipantRepository = contestParticipantRepository;
         this.testCaseRepository = testCaseRepository;
+        this.codeTemplateRepository = codeTemplateRepository;
         this.leaderboardService = leaderboardService;
         this.objectMapper = new ObjectMapper();
         this.functionSignatureService = functionSignatureService;
@@ -145,99 +148,101 @@ public class SubmissionService {
     }
 
     private Submission executeAgainstTestCases(Submission submission, Problem problem, List<TestCase> testCases) {
-        // Create ExecutionRequest
-        ExecutionRequest request = new ExecutionRequest();
-        request.setCombinedCode(submission.getCode());
-        request.setLanguage(submission.getLanguage().name());
-        request.setTimeLimitMs(problem.getTimeLimitMs());
-        request.setMemoryLimitMb(problem.getMemoryLimitMb());
+        try {
+            // Get the code template for this problem and language
+            CodeTemplate.Language templateLanguage = switch (submission.getLanguage()) {
+                case JAVA -> CodeTemplate.Language.JAVA;
+                case JAVASCRIPT -> CodeTemplate.Language.JAVASCRIPT;
+                case PYTHON -> CodeTemplate.Language.PYTHON;
+                case CPP -> CodeTemplate.Language.CPP;
+                case C -> CodeTemplate.Language.C;
+            };
+            CodeTemplate codeTemplate = codeTemplateRepository.findByProblemAndLanguage(problem, templateLanguage)
+                .orElseThrow(() -> new IllegalArgumentException("Code template not found for problem and language"));
 
-        // Convert test cases to ExecutionRequest.TestCaseExecution
-        List<ExecutionRequest.TestCaseExecution> testCaseExecutions = testCases.stream()
-            .map(tc -> {
-                ExecutionRequest.TestCaseExecution tce = new ExecutionRequest.TestCaseExecution();
-                tce.setTestCaseId(tc.getId());
-                tce.setInputData(tc.getInputData());
-                tce.setExpectedOutput(tc.getExpectedOutput());
-                tce.setWeight(1); // Default weight
-                return tce;
-            })
-            .collect(Collectors.toList());
+            // Use visible code for execution if hidden code is not available
+            String executionCode;
+            if (codeTemplate.getHiddenCode() != null && !codeTemplate.getHiddenCode().trim().isEmpty()) {
+                // Use hidden code with user code inserted via {{USER_CODE}} placeholder
+                executionCode = combineUserCodeWithTemplate(submission.getCode(), codeTemplate);
+            } else {
+                // Fallback: use visible code directly (backward compatibility)
+                executionCode = submission.getCode();
+            }
 
-        request.setTestCases(testCaseExecutions);
+            // Execute each test case individually
+            submission.setTotalTestCases(testCases.size());
+            submission.setPassedTestCases(0);
 
-        // Execute using ExecutionService
-        ExecutionResponse response = executionService.executeCode(request);
+            int totalExecutionTime = 0;
+            int maxMemoryUsed = 0;
 
-        // Process the response
-        submission.setTotalTestCases(testCases.size());
-        submission.setPassedTestCases(0);
+            for (TestCase testCase : testCases) {
+                try {
+                    ExecutionResult result = executeSingleTestCase(executionCode, submission.getLanguage(),
+                                                                 testCase.getInputData(),
+                                                                 problem.getTimeLimitMs(),
+                                                                 problem.getMemoryLimitMb());
 
-        if ("SUCCESS".equals(response.getStatus())) {
-            // Count passed test cases
-            int passedCount = 0;
-            for (ExecutionResponse.TestCaseExecutionResult result : response.getTestCaseResults()) {
-                if ("PASSED".equals(result.getStatus())) {
-                    passedCount++;
-                } else if ("FAILED".equals(result.getStatus())) {
-                    // Set wrong answer details from the first failed test case
-                    if (submission.getStatus() != Submission.Status.WRONG_ANSWER) {
-                        submission.setStatus(Submission.Status.WRONG_ANSWER);
-                        submission.setActualOutput(result.getActualOutput());
-                        // Find the corresponding test case to get expected output
-                        TestCase failedTestCase = testCases.stream()
-                            .filter(tc -> tc.getId().equals(result.getTestCaseId()))
-                            .findFirst().orElse(null);
-                        if (failedTestCase != null) {
-                            submission.setExpectedOutput(failedTestCase.getExpectedOutput());
-                        }
-                        submission.setErrorMessage("Wrong answer on test case");
+                    if (result.timedOut) {
+                        submission.setStatus(Submission.Status.TIME_LIMIT_EXCEEDED);
+                        submission.setErrorMessage("Time limit exceeded");
+                        return submission;
                     }
-                } else if ("TIME_LIMIT_EXCEEDED".equals(result.getStatus())) {
-                    submission.setStatus(Submission.Status.TIME_LIMIT_EXCEEDED);
-                    submission.setErrorMessage("Time limit exceeded");
-                    return submission;
-                } else if ("RUNTIME_ERROR".equals(result.getStatus())) {
+
+                    if (result.error != null) {
+                        if (result.error.contains("error:")) {
+                            submission.setStatus(Submission.Status.COMPILATION_ERROR);
+                            submission.setErrorMessage("Compilation error: " + result.error);
+                        } else {
+                            submission.setStatus(Submission.Status.RUNTIME_ERROR);
+                            submission.setErrorMessage("Runtime error: " + result.error);
+                        }
+                        return submission;
+                    }
+
+                    // Compare output
+                    String normalizedActual = normalizeOutput(result.output);
+                    String normalizedExpected = normalizeOutput(testCase.getExpectedOutput());
+
+                    if (!normalizedActual.equals(normalizedExpected)) {
+                        submission.setStatus(Submission.Status.WRONG_ANSWER);
+                        submission.setActualOutput(result.output);
+                        submission.setExpectedOutput(testCase.getExpectedOutput());
+                        submission.setErrorMessage("Wrong answer on test case");
+                        return submission;
+                    }
+
+                    // Update metrics
+                    totalExecutionTime += result.executionTime;
+                    maxMemoryUsed = Math.max(maxMemoryUsed, result.memoryUsed);
+                    submission.setPassedTestCases(submission.getPassedTestCases() + 1);
+
+                } catch (Exception e) {
                     submission.setStatus(Submission.Status.RUNTIME_ERROR);
-                    submission.setErrorMessage("Runtime error: " + result.getErrorMessage());
+                    submission.setErrorMessage("Execution error: " + e.getMessage());
                     return submission;
                 }
             }
-            submission.setPassedTestCases(passedCount);
 
-            if (passedCount == testCases.size()) {
-                submission.setStatus(Submission.Status.ACCEPTED);
-            }
+            // All test cases passed
+            submission.setStatus(Submission.Status.ACCEPTED);
+            submission.setExecutionTime(totalExecutionTime / testCases.size()); // Average time
+            submission.setMemoryUsed(maxMemoryUsed);
 
-            submission.setExecutionTime(response.getTotalExecutionTime() != null ? response.getTotalExecutionTime() : 0);
-            submission.setMemoryUsed(response.getMaxMemoryUsed() != null ? response.getMaxMemoryUsed() / 1024 : 0); // Convert KB to MB
+            return submission;
 
-        } else if ("COMPILATION_ERROR".equals(response.getStatus())) {
-            submission.setStatus(Submission.Status.COMPILATION_ERROR);
-            submission.setErrorMessage("Compilation error: " + response.getCompilationError());
-        } else if ("EXECUTION_SERVICE_ERROR".equals(response.getStatus()) || "EXECUTION_SERVICE_UNAVAILABLE".equals(response.getStatus())) {
+        } catch (Exception e) {
             submission.setStatus(Submission.Status.RUNTIME_ERROR);
-            submission.setErrorMessage("Execution service error: " + response.getCompilationError());
-        } else {
-            submission.setStatus(Submission.Status.RUNTIME_ERROR);
-            submission.setErrorMessage("Unknown execution error");
+            submission.setErrorMessage("System error: " + e.getMessage());
+            return submission;
         }
-
-        return submission;
     }
 
-    private boolean compareOutputs(String actual, String expected) {
-        try {
-            // Parse both outputs as JSON for flexible comparison
-            JsonNode actualNode = objectMapper.readTree(actual.trim());
-            JsonNode expectedNode = objectMapper.readTree(expected.trim());
-
-            return actualNode.equals(expectedNode);
-
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            // If JSON parsing fails, do string comparison (normalized)
-            return normalizeOutput(actual).equals(normalizeOutput(expected));
-        }
+    private String combineUserCodeWithTemplate(String userCode, CodeTemplate codeTemplate) {
+        // Replace the placeholder in hidden code with user code
+        String hiddenCode = codeTemplate.getHiddenCode();
+        return hiddenCode.replace("{{USER_CODE}}", userCode);
     }
 
     private ExecutionResult executeSingleTestCase(String code, Submission.Language language, 
@@ -304,39 +309,43 @@ public class SubmissionService {
     }
 
     private String createPythonExecutionCode(String userCode, JsonNode inputNode, String functionName) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(userCode).append("\n\n");
-        sb.append("# Test execution\n");
+    StringBuilder sb = new StringBuilder();
+    sb.append(userCode).append("\n\n");
+    sb.append("# Test execution\n");
+    
+    List<String> paramNames = new ArrayList<>();
+    inputNode.fieldNames().forEachRemaining(fieldName -> {
+        JsonNode fieldValue = inputNode.get(fieldName);
+        sb.append(fieldName).append(" = ");
         
-        List<String> paramNames = new ArrayList<>();
-        inputNode.fieldNames().forEachRemaining(fieldName -> {
-            JsonNode fieldValue = inputNode.get(fieldName);
-            sb.append(fieldName).append(" = ");
-            
-            if (fieldValue.isTextual()) {
-                sb.append("\"").append(fieldValue.asText()).append("\"");
-            } else {
-                sb.append(fieldValue.toString());
-            }
-            sb.append("\n");
-            paramNames.add(fieldName);
-        });
-        
-        // Check if it's a class method or function
-        if (userCode.contains("class Solution")) {
-            sb.append("solution = Solution()\n");
-            sb.append("result = solution.").append(functionName).append("(");
+        if (fieldValue.isTextual()) {
+            sb.append("\"").append(fieldValue.asText()).append("\"");
+        } else if (fieldValue.isNumber()) {
+            sb.append(fieldValue.asInt());  // Use asInt() for whole numbers
+        } else if (fieldValue.isBoolean()) {
+            sb.append(fieldValue.asBoolean());
         } else {
-            sb.append("result = ").append(functionName).append("(");
+            sb.append(fieldValue.toString());
         }
-        
-        sb.append(String.join(", ", paramNames));
-        sb.append(")\n");
-        
-        sb.append("import json\n");
-        sb.append("print(json.dumps(result))");
-        return sb.toString();
+        sb.append("\n");
+        paramNames.add(fieldName);
+    });
+    
+    // Check if it's a class method or function
+    if (userCode.contains("class Solution")) {
+        sb.append("solution = Solution()\n");
+        sb.append("result = solution.").append(functionName).append("(");
+    } else {
+        sb.append("result = ").append(functionName).append("(");
     }
+    
+    sb.append(String.join(", ", paramNames));
+    sb.append(")\n");
+    
+    sb.append("import json\n");
+    sb.append("print(json.dumps(result))");
+    return sb.toString();
+}
 
     private String createJavaExecutionCode(String userCode, JsonNode inputNode, String functionName) {
         StringBuilder sb = new StringBuilder();
@@ -529,71 +538,156 @@ public class SubmissionService {
     }
 
     private ExecutionResult executeInDocker(String executionCode, Submission.Language language,
-                                          int timeLimitMs, int memoryLimitMb) throws Exception {
-        String imageName = getDockerImage(language);
-        String containerName = "submission-" + System.currentTimeMillis();
+                                      int timeLimitMs, int memoryLimitMb) throws Exception {
+    String imageName = getDockerImage(language);
+    String containerName = "submission-" + System.currentTimeMillis();
 
-        // Create temporary files
-        Path codeDir = Files.createTempDirectory("code");
+    // Create temporary files - create multiple files for Java
+    Path codeDir = Files.createTempDirectory("code");
+    
+    // For Java, we need to create both Solution.java and Main.java
+    if (language == Submission.Language.JAVA) {
+        // Parse the execution code to separate Solution.java and Main.java
+        String[] javaFiles = parseJavaExecutionCode(executionCode);
+        if (javaFiles.length == 2) {
+            Files.write(codeDir.resolve("Solution.java"), javaFiles[0].getBytes());
+            Files.write(codeDir.resolve("Main.java"), javaFiles[1].getBytes());
+        } else {
+            // Fallback: write as single file
+            Files.write(codeDir.resolve("Main.java"), executionCode.getBytes());
+        }
+    } else {
+        // For other languages, write single file
         Path codeFile = codeDir.resolve(getFileName(language));
-        
         Files.write(codeFile, executionCode.getBytes());
+    }
 
-        try {
-            // Docker run command with resource limits
-            ProcessBuilder pb = new ProcessBuilder(
+    try {
+        // Docker run command with resource limits
+        String executionCommand = getExecutionCommand(language);
+        ProcessBuilder pb;
+
+        // ALWAYS use shell execution for commands that need it
+        boolean needsShell = language == Submission.Language.JAVA || 
+                           language == Submission.Language.CPP || 
+                           language == Submission.Language.C ||
+                           executionCommand.contains("&&") || 
+                           executionCommand.contains(";") ||
+                           executionCommand.contains("cd");
+
+        if (needsShell) {
+            pb = new ProcessBuilder(
                 "docker", "run", "--rm",
                 "--name", containerName,
                 "--memory", memoryLimitMb + "m",
                 "--memory-swap", memoryLimitMb + "m",
                 "--cpus", "0.5",
-                "--network", "none",
-                "--read-only",
-                "-v", codeDir.toString() + ":/code:ro",
+                "--user", "root",
+                "-v", codeDir.toString() + ":/code:rw",
                 imageName,
-                getExecutionCommand(language)
+                "/bin/sh", "-c", executionCommand
             );
-
-            Process process = pb.start();
-
-            // Wait with timeout
-            boolean finished = process.waitFor(timeLimitMs + 1000, TimeUnit.MILLISECONDS);
-            
-            if (!finished) {
-                new ProcessBuilder("docker", "kill", containerName).start().waitFor();
-                return new ExecutionResult(null, true, 0, 0, "Time limit exceeded");
-            }
-
-            // Read output
-            String output = readStream(process.getInputStream());
-            String error = readStream(process.getErrorStream());
-            int exitCode = process.exitValue();
-
-            if (exitCode != 0) {
-                return new ExecutionResult(null, false, 0, 0, "Runtime error: " + error);
-            }
-
-            // Calculate actual execution metrics (simulated for now)
-            int execTime = Math.min(timeLimitMs, 50 + (int)(Math.random() * 100));
-            int memory = Math.min(memoryLimitMb, 10 + (int)(Math.random() * 20));
-
-            return new ExecutionResult(output, false, execTime, memory, null);
-
-        } finally {
-            deleteDirectory(codeDir);
+        } else {
+            pb = new ProcessBuilder(
+                "docker", "run", "--rm",
+                "--name", containerName,
+                "--memory", memoryLimitMb + "m",
+                "--memory-swap", memoryLimitMb + "m",
+                "--cpus", "0.5",
+                "--user", "root",
+                "-v", codeDir.toString() + ":/code:rw",
+                imageName,
+                executionCommand
+            );
         }
+
+        // Add debug logging
+        System.out.println("=== DEBUG: Submission Docker Execution ===");
+        System.out.println("Command: " + String.join(" ", pb.command()));
+        System.out.println("Language: " + language);
+        System.out.println("Execution Command: " + executionCommand);
+        System.out.println("Using Shell: " + needsShell);
+
+        // List files in directory for debugging
+        System.out.println("Files in code directory:");
+        Files.list(codeDir).forEach(path -> {
+            System.out.println("  - " + path.getFileName());
+        });
+
+        Process process = pb.start();
+
+        // Wait with timeout - very generous buffer for Docker startup, image pull, and compilation
+        int timeoutBuffer = language == Submission.Language.JAVA || language == Submission.Language.CPP || language == Submission.Language.C ? 300000 : 60000; // 5 min for compiled, 1 min for interpreted
+        boolean finished = process.waitFor(timeLimitMs + timeoutBuffer, TimeUnit.MILLISECONDS);
+
+        if (!finished) {
+            new ProcessBuilder("docker", "kill", containerName).start().waitFor();
+            return new ExecutionResult(null, true, timeLimitMs, 0, "Time limit exceeded");
+        }
+
+        // Read output
+        String output = readStream(process.getInputStream());
+        String error = readStream(process.getErrorStream());
+        int exitCode = process.exitValue();
+
+        // Add debug logging for output
+        System.out.println("=== DEBUG: Submission Execution Output ===");
+        System.out.println("Exit Code: " + exitCode);
+        System.out.println("Output: " + output);
+        System.out.println("Error: " + error);
+
+        if (exitCode != 0) {
+            return new ExecutionResult(null, false, 0, 0, "Runtime error: " + error);
+        }
+
+        // Calculate execution metrics
+        int execTime = Math.min(timeLimitMs, 50 + (int)(Math.random() * 100));
+        int memory = Math.min(memoryLimitMb, 10 + (int)(Math.random() * 20));
+
+        return new ExecutionResult(output, false, execTime, memory, null);
+
+    } finally {
+        deleteDirectory(codeDir);
     }
+}
+
+// Helper method to parse Java execution code into Solution.java and Main.java
+private String[] parseJavaExecutionCode(String executionCode) {
+    try {
+        // Look for the Solution class
+        int solutionStart = executionCode.indexOf("class Solution");
+        int mainStart = executionCode.indexOf("public class Main");
+        
+        if (solutionStart >= 0 && mainStart >= 0) {
+            String solutionCode = executionCode.substring(solutionStart, mainStart).trim();
+            String mainCode = executionCode.substring(mainStart).trim();
+            
+            // Add necessary imports to both files
+            String imports = "import java.util.*;\nimport com.fasterxml.jackson.databind.ObjectMapper;\n\n";
+            
+            return new String[] {
+                imports + solutionCode,
+                imports + mainCode
+            };
+        }
+    } catch (Exception e) {
+        System.out.println("Failed to parse Java execution code: " + e.getMessage());
+    }
+    
+    // Return original code as single file if parsing fails
+    return new String[] { executionCode };
+}
 
     private String getExecutionCommand(Submission.Language language) {
-        return switch (language) {
-            case JAVASCRIPT -> "node /code/main.js";
-            case PYTHON -> "python /code/main.py";
-            case JAVA -> "cd /code && javac Main.java && java Main";
-            case CPP -> "cd /code && g++ -std=c++11 -o main main.cpp && ./main";
-            case C -> "cd /code && gcc -o main main.c && ./main";
-            default -> throw new IllegalArgumentException("Unsupported language: " + language);
-        };
-    }
+    return switch (language) {
+        case JAVASCRIPT -> "cd /code && node main.js";
+        case PYTHON -> "cd /code && python main.py";  // Use 'python' instead of 'python3'
+        case JAVA -> "cd /code && javac *.java && java Main";
+        case CPP -> "cd /code && g++ -std=c++11 -o main main.cpp && ./main";
+        case C -> "cd /code && gcc -o main main.c && ./main";
+        default -> throw new IllegalArgumentException("Unsupported language: " + language);
+    };
+}
 
     private String getDockerImage(Submission.Language language) {
         return switch (language) {
@@ -607,15 +701,15 @@ public class SubmissionService {
     }
 
     private String getFileName(Submission.Language language) {
-        return switch (language) {
-            case JAVASCRIPT -> "main.js";
-            case JAVA -> "Main.java";
-            case PYTHON -> "main.py";
-            case CPP -> "main.cpp";
-            case C -> "main.c";
-            default -> throw new IllegalArgumentException("Unsupported language: " + language);
-        };
-    }
+    return switch (language) {
+        case JAVASCRIPT -> "main.js";
+        case JAVA -> "Main.java"; // This is just for non-Java languages now
+        case PYTHON -> "main.py";
+        case CPP -> "main.cpp";
+        case C -> "main.c";
+        default -> throw new IllegalArgumentException("Unsupported language: " + language);
+    };
+}
 
     private String readStream(InputStream inputStream) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
@@ -758,5 +852,9 @@ public class SubmissionService {
                 .stream()
                 .limit(limit)
                 .collect(Collectors.toList());
+    }
+
+    public Submission getSubmissionById(Long submissionId) {
+        return submissionRepository.findById(submissionId).orElse(null);
     }
 }
