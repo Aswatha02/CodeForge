@@ -107,16 +107,25 @@ public class ProblemService {
     }
 
     @Transactional(readOnly = true)
-    public List<Problem> getAllProblems() {
-        List<Problem> problems = problemRepository.findAllActiveWithDetails();
-
-        // Force initialization of categories (already eagerly fetched)
-        problems.forEach(problem -> {
-            problem.getCategories().size();
-        });
-
-        return problems;
-    }
+public List<Problem> getAllProblems() {
+    // Use the method that has @EntityGraph to load test cases
+    List<Problem> problems = problemRepository.findAllActiveWithDetails();
+    
+    System.out.println("DEBUG: Found " + problems.size() + " active problems");
+    
+    // Debug: Check if test cases are loaded
+    problems.forEach(problem -> {
+        System.out.println("Problem: " + problem.getTitle());
+        System.out.println("Test cases count: " + (problem.getTestCases() != null ? problem.getTestCases().size() : 0));
+        if (problem.getTestCases() != null) {
+            problem.getTestCases().forEach(tc -> {
+                System.out.println("  - Test case: " + tc.getInputData() + " -> " + tc.getExpectedOutput() + " (Sample: " + tc.getIsSample() + ")");
+            });
+        }
+    });
+    
+    return problems;
+}
 
     @Transactional(readOnly = true)
     public Optional<Problem> getProblemById(Long id) {
@@ -515,12 +524,5 @@ public class ProblemService {
             throw new RuntimeException("Code template does not belong to the specified problem");
         }
         codeTemplateRepository.delete(codeTemplate);
-    }
-
-    @Transactional(readOnly = true)
-    public List<CodeTemplate> getCodeTemplates(Long problemId) {
-        Problem problem = problemRepository.findById(problemId)
-                .orElseThrow(() -> new RuntimeException("Problem not found"));
-        return codeTemplateRepository.findByProblem(problem);
     }
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
-import { executionAPI } from '../services/api';
+import { executionAPI, userAPI } from '../services/api'; // Import both APIs
 import ProblemDetailsView from './ProblemDetailsView';
 import TestCasesSection from './TestCasesSection';
 
@@ -12,7 +12,6 @@ const CodeEditor = ({ problem, onBack }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [executionResult, setExecutionResult] = useState(null);
   const [submissionResult, setSubmissionResult] = useState(null);
-
 
   const languages = [
     { value: 'JAVA', label: 'Java' },
@@ -27,11 +26,13 @@ const CodeEditor = ({ problem, onBack }) => {
   ];
 
   useEffect(() => {
-    if (problem) {
-      setDefaultCode();
-    }
-  }, [problem, language]);
-
+  if (problem) {
+    setDefaultCode();
+    console.log("CodeEditor - Problem received:", problem);
+    console.log("CodeEditor - Test cases:", problem.testCases);
+    console.log("CodeEditor - Sample test cases:", problem.testCases?.filter(tc => tc.isSample));
+  }
+}, [problem, language]);
 
 
   const setDefaultCode = () => {
@@ -39,40 +40,35 @@ const CodeEditor = ({ problem, onBack }) => {
       // Fallback to basic template if no stored template exists
       const fallbackTemplates = {
         JAVA: `public class Solution {
-    public ${problem?.returnType || 'void'} ${problem?.functionName || 'solution'}(${getParametersString()}) {
+    public ${problem?.returnType || 'int[][]'} ${problem?.functionName || 'solve'}(${getParametersString()}) {
         // Write your code here
-
+        
     }
 }`,
         PYTHON: `class Solution:
-    def ${problem?.functionName || 'solution'}(self${getParametersString(true)}) -> ${problem?.returnType || 'None'}:
+    def ${problem?.functionName || 'solve'}(self${getParametersString(true)}):
         # Write your code here
         pass`,
         JAVASCRIPT: `/**
  * @param {${getParametersString(true)}}
- * @return {${problem?.returnType || '*'}}
+ * @return {${problem?.returnType || 'number[][]'}}
  */
-var ${problem?.functionName || 'solution'} = function(${getParametersString(true)}) {
+var ${problem?.functionName || 'solve'} = function(${getParametersString(true)}) {
     // Write your code here
-
+    
 };`,
         C: `#include <stdio.h>
 #include <stdlib.h>
 
-${problem?.returnType || 'void'} ${problem?.functionName || 'solution'}(${getParametersString()}) {
+${problem?.returnType || 'int**'} ${problem?.functionName || 'solve'}(${getParametersString()}) {
     // Write your code here
 
-}
-
-int main() {
-    // Test your function here
-    return 0;
 }`,
         CPP: `class Solution {
 public:
-    ${problem?.returnType || 'void'} ${problem?.functionName || 'solution'}(${getParametersString()}) {
+    ${problem?.returnType || 'vector<vector<int>>'} ${problem?.functionName || 'solve'}(${getParametersString()}) {
         // Write your code here
-
+        
     }
 };`
       };
@@ -104,6 +100,14 @@ public:
       // Get sample test cases from the problem
       const sampleTestCases = problem?.testCases?.filter(tc => tc.isSample) || [];
 
+      if (sampleTestCases.length === 0) {
+        setExecutionResult({
+          status: 'ERROR',
+          message: 'No sample test cases available for this problem'
+        });
+        return;
+      }
+
       // Transform test cases to match backend format
       const testCases = sampleTestCases.map((tc, index) => ({
         testCaseId: tc.id || index + 1,
@@ -114,18 +118,24 @@ public:
 
       const request = {
         combinedCode: code,
-        language,
-        testCases,
-        timeLimitMs: 5000, // 5 seconds default
-        memoryLimitMb: 256 // 256MB default
+        language: language,
+        testCases: testCases,
+        timeLimitMs: problem?.timeLimitMs || 5000,
+        memoryLimitMb: problem?.memoryLimitMb || 256
       };
 
+      console.log('Sending execution request:', request);
       const response = await executionAPI.runCode(request);
+      console.log('Execution response:', response.data);
       setExecutionResult(response.data);
     } catch (error) {
+      console.error('Execution error:', error);
       setExecutionResult({
         status: 'ERROR',
-        message: error.response?.data?.message || 'Execution failed'
+        message: error.response?.data?.compilationError || 
+                error.response?.data?.message || 
+                error.message || 
+                'Execution failed'
       });
     } finally {
       setIsRunning(false);
@@ -137,20 +147,103 @@ public:
     setSubmissionResult(null);
     try {
       const request = {
-        code,
-        language,
-        problemId: problem.id
+        code: code,
+        language: language
       };
-      const response = await executionAPI.submitSolution(request);
-      setSubmissionResult(response.data);
+      
+      console.log('Submitting solution for problem:', problem.id);
+      const response = await userAPI.submitSolution(problem.id, request);
+      console.log('Submission response:', response.data);
+      
+      setSubmissionResult({
+        status: response.data.status,
+        message: getSubmissionMessage(response.data.status),
+        data: response.data
+      });
     } catch (error) {
+      console.error('Submission error:', error);
       setSubmissionResult({
         status: 'ERROR',
-        message: error.response?.data?.message || 'Submission failed'
+        message: error.response?.data?.message || 
+                error.message || 
+                'Submission failed'
       });
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const getSubmissionMessage = (status) => {
+    switch (status) {
+      case 'ACCEPTED': return '✅ Solution Accepted! All test cases passed.';
+      case 'WRONG_ANSWER': return '❌ Wrong Answer. Check your logic.';
+      case 'TIME_LIMIT_EXCEEDED': return '⏰ Time Limit Exceeded. Optimize your solution.';
+      case 'RUNTIME_ERROR': return '💥 Runtime Error. Check for exceptions.';
+      case 'COMPILATION_ERROR': return '🔧 Compilation Error. Check your syntax.';
+      default: return `Status: ${status}`;
+    }
+  };
+
+  const renderExecutionResult = () => {
+    if (!executionResult) return null;
+
+    return (
+      <div className="bg-gray-800 rounded-lg p-4 border border-gray-600">
+        <h3 className="font-medium text-white mb-2">Execution Result</h3>
+        <div className={`p-3 rounded ${
+          executionResult.status === 'SUCCESS' ? 'bg-green-900/30 text-green-300' : 
+          executionResult.status === 'COMPILATION_ERROR' ? 'bg-red-900/30 text-red-300' :
+          'bg-yellow-900/30 text-yellow-300'
+        }`}>
+          {executionResult.status === 'SUCCESS' && executionResult.testCaseResults && (
+            <div>
+              <div className="mb-2">
+                <strong>Test Cases:</strong> {executionResult.testCaseResults.filter(tc => tc.status === 'PASSED').length} / {executionResult.testCaseResults.length} passed
+              </div>
+              {executionResult.testCaseResults.map((tc, index) => (
+                <div key={index} className="text-sm mb-1">
+                  <span className={tc.status === 'PASSED' ? 'text-green-400' : 'text-red-400'}>
+                    • Test {index + 1}: {tc.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {executionResult.compilationError && (
+            <div>
+              <strong>Compilation Error:</strong>
+              <pre className="mt-1 whitespace-pre-wrap">{executionResult.compilationError}</pre>
+            </div>
+          )}
+          {executionResult.message && !executionResult.compilationError && (
+            <pre className="whitespace-pre-wrap">{executionResult.message}</pre>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderSubmissionResult = () => {
+    if (!submissionResult) return null;
+
+    return (
+      <div className="bg-gray-800 rounded-lg p-4 border border-gray-600">
+        <h3 className="font-medium text-white mb-2">Submission Result</h3>
+        <div className={`p-3 rounded ${
+          submissionResult.status === 'ACCEPTED' ? 'bg-green-900/30 text-green-300' : 
+          'bg-red-900/30 text-red-300'
+        }`}>
+          <div className="font-semibold">{submissionResult.message}</div>
+          {submissionResult.data && (
+            <div className="mt-2 text-sm">
+              <div>Execution Time: {submissionResult.data.executionTime || 0}ms</div>
+              <div>Memory Used: {submissionResult.data.memoryUsed || 0}MB</div>
+              <div>Test Cases: {submissionResult.data.passedTestCases || 0}/{submissionResult.data.totalTestCases || 0}</div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   const renderActiveTab = () => {
@@ -213,24 +306,10 @@ public:
             </div>
 
             {/* Execution Result */}
-            {executionResult && (
-              <div className="bg-gray-800 rounded-lg p-4 border border-gray-600">
-                <h3 className="font-medium text-white mb-2">Execution Result</h3>
-                <div className={`p-3 rounded ${executionResult.status === 'SUCCESS' ? 'bg-green-900/30 text-green-300' : 'bg-red-900/30 text-red-300'}`}>
-                  <pre className="whitespace-pre-wrap text-sm text-gray-200">{executionResult.message || JSON.stringify(executionResult, null, 2)}</pre>
-                </div>
-              </div>
-            )}
+            {renderExecutionResult()}
 
             {/* Submission Result */}
-            {submissionResult && (
-              <div className="bg-gray-800 rounded-lg p-4 border border-gray-600">
-                <h3 className="font-medium text-white mb-2">Submission Result</h3>
-                <div className={`p-3 rounded ${submissionResult.status === 'ACCEPTED' ? 'bg-green-900/30 text-green-300' : 'bg-red-900/30 text-red-300'}`}>
-                  <pre className="whitespace-pre-wrap text-sm text-gray-200">{submissionResult.message || JSON.stringify(submissionResult, null, 2)}</pre>
-                </div>
-              </div>
-            )}
+            {renderSubmissionResult()}
           </div>
         );
       default:
@@ -267,6 +346,7 @@ public:
               <div className="h-6 w-px bg-gray-600"></div>
               <div>
                 <h1 className="text-xl font-bold text-white">{problem.title}</h1>
+                <div className="text-sm text-gray-400">ID: {problem.id}</div>
               </div>
             </div>
           </div>

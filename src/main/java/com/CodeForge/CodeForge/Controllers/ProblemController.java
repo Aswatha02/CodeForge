@@ -1,5 +1,6 @@
 package com.CodeForge.CodeForge.Controllers;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -23,6 +24,7 @@ import com.CodeForge.CodeForge.dto.ProblemRequest;
 import com.CodeForge.CodeForge.dto.ProblemResponseDTO;
 import com.CodeForge.CodeForge.model.CodeTemplate;
 import com.CodeForge.CodeForge.model.Problem;
+import com.CodeForge.CodeForge.model.TestCase;
 import com.CodeForge.CodeForge.model.User;
 import com.CodeForge.CodeForge.services.ProblemService;
 
@@ -204,6 +206,43 @@ public class ProblemController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
+
+    @GetMapping("/debug/{id}/test-cases")
+public ResponseEntity<?> debugProblemTestCases(@PathVariable Long id) {
+    try {
+        Optional<Problem> problemOpt = problemService.getProblemById(id);
+        if (problemOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        
+        Problem problem = problemOpt.get();
+        Map<String, Object> response = new HashMap<>();
+        response.put("problemId", problem.getId());
+        response.put("problemTitle", problem.getTitle());
+        response.put("totalTestCases", problem.getTestCases().size());
+        response.put("sampleTestCases", problem.getTestCases().stream()
+                .filter(TestCase::getIsSample)
+                .count());
+        
+        List<Map<String, Object>> testCasesInfo = problem.getTestCases().stream()
+                .map(tc -> {
+                    Map<String, Object> tcInfo = new HashMap<>();
+                    tcInfo.put("id", tc.getId());
+                    tcInfo.put("inputData", tc.getInputData());
+                    tcInfo.put("expectedOutput", tc.getExpectedOutput());
+                    tcInfo.put("isSample", tc.getIsSample());
+                    tcInfo.put("explanation", tc.getExplanation());
+                    return tcInfo;
+                })
+                .collect(Collectors.toList());
+        
+        response.put("testCases", testCasesInfo);
+        
+        return ResponseEntity.ok(response);
+    } catch (Exception e) {
+        return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+    }
+}
 
     @GetMapping("/{problemId}/templates")
     public ResponseEntity<List<CodeTemplate>> getCodeTemplates(@PathVariable Long problemId) {

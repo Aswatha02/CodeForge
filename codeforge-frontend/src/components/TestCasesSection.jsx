@@ -3,14 +3,33 @@ import React, { useState } from 'react';
 const TestCasesSection = ({ problem }) => {
   const [activeTestCase, setActiveTestCase] = useState(0);
 
+  // Debug logging to see what we're receiving
+  console.log("TestCasesSection - Problem:", problem);
+  console.log("TestCasesSection - Test cases:", problem?.testCases);
+  console.log("TestCasesSection - Sample test cases:", problem?.testCases?.filter(tc => tc.isSample));
+
   if (!problem?.testCases || problem.testCases.length === 0) {
-    return null;
+    return (
+      <div className="bg-gray-800 rounded-lg p-4 border border-gray-600">
+        <h3 className="font-medium text-white mb-2">Test Cases</h3>
+        <div className="text-gray-400 text-sm">
+          No test cases available for this problem.
+        </div>
+      </div>
+    );
   }
 
   const sampleTestCases = problem.testCases.filter(tc => tc.isSample);
 
   if (sampleTestCases.length === 0) {
-    return null;
+    return (
+      <div className="bg-gray-800 rounded-lg p-4 border border-gray-600">
+        <h3 className="font-medium text-white mb-2">Test Cases</h3>
+        <div className="text-gray-400 text-sm">
+          No sample test cases available. All {problem.testCases.length} test cases are hidden.
+        </div>
+      </div>
+    );
   }
 
   const currentTestCase = sampleTestCases[activeTestCase];
@@ -18,10 +37,9 @@ const TestCasesSection = ({ problem }) => {
   const formatTestCaseData = (data) => {
     try {
       const parsed = JSON.parse(data);
-      return Object.entries(parsed).map(([key, value]) =>
-        `${key}: ${JSON.stringify(value)}`
-      ).join(', ');
-    } catch {
+      return JSON.stringify(parsed, null, 2);
+    } catch (error) {
+      console.log("Error parsing test case data:", error);
       return data;
     }
   };
@@ -30,16 +48,22 @@ const TestCasesSection = ({ problem }) => {
     <div className="bg-gray-800 rounded-lg border border-gray-600">
       <div className="p-4 border-b border-gray-600">
         <h3 className="text-lg font-semibold text-white">Test Cases</h3>
+        <p className="text-sm text-gray-400 mt-1">
+          {sampleTestCases.length} sample test case(s) available
+          {problem.testCases.length > sampleTestCases.length && 
+            ` (${problem.testCases.length - sampleTestCases.length} hidden)`
+          }
+        </p>
       </div>
 
       {/* Test Case Navigation */}
       <div className="px-4 py-2 border-b border-gray-600">
-        <div className="flex space-x-2">
-          {sampleTestCases.map((_, index) => (
+        <div className="flex space-x-2 overflow-x-auto">
+          {sampleTestCases.map((testCase, index) => (
             <button
-              key={index}
+              key={testCase.id || index}
               onClick={() => setActiveTestCase(index)}
-              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors whitespace-nowrap ${
                 activeTestCase === index
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
