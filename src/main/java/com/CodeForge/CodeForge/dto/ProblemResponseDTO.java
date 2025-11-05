@@ -48,6 +48,11 @@ public class ProblemResponseDTO {
     private String parametersJson;
     private String categoryString;
 
+    // Statistics fields
+    private Double acceptanceRate;
+    private Integer submissionCount;
+    private String userStatus; // "solved", "attempted", "unsolved"
+
     // ADD: Default constructor for Jackson
     public ProblemResponseDTO() {
         // Initialize collections to avoid null pointers
@@ -234,4 +239,14 @@ public class ProblemResponseDTO {
 
     public String getCategoryString() { return categoryString; }
     public void setCategoryString(String categoryString) { this.categoryString = categoryString; }
+
+    // Getters and setters for statistics fields
+    public Double getAcceptanceRate() { return acceptanceRate; }
+    public void setAcceptanceRate(Double acceptanceRate) { this.acceptanceRate = acceptanceRate; }
+
+    public Integer getSubmissionCount() { return submissionCount; }
+    public void setSubmissionCount(Integer submissionCount) { this.submissionCount = submissionCount; }
+
+    public String getUserStatus() { return userStatus; }
+    public void setUserStatus(String userStatus) { this.userStatus = userStatus; }
 }

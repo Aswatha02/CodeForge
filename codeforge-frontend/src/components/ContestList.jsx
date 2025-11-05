@@ -41,9 +41,17 @@ const ContestList = ({ onEnterContest }) => {
     const startTime = new Date(contest.startTime);
     const endTime = new Date(contest.endTime);
 
-    if (now < startTime) return 'upcoming';
-    if (now >= startTime && now <= endTime) return 'ongoing';
-    return 'past';
+    let status;
+    if (now < startTime) {
+      status = 'upcoming';
+    } else if (now >= startTime && now <= endTime) {
+      status = 'ongoing';
+    } else {
+      status = 'past';
+    }
+    
+    console.log(`Contest "${contest.title}" status: ${status}`);
+    return status;
   };
 
   const getStatusColor = (status) => {
@@ -66,13 +74,14 @@ const ContestList = ({ onEnterContest }) => {
 
   const handleJoinContest = async (contestId) => {
     try {
-      await userAPI.joinContest(contestId);
+      const response = await userAPI.joinContest(contestId);
       // Refresh contests after joining
       fetchContests();
-      alert('Successfully joined the contest!');
+      alert(response.data?.message || 'Successfully joined the contest!');
     } catch (error) {
       console.error('Error joining contest:', error);
-      alert('Failed to join contest. Please try again.');
+      const errorMessage = error.response?.data?.message || 'Failed to join contest. Please try again.';
+      alert(errorMessage);
     }
   };
 
@@ -145,7 +154,12 @@ const ContestList = ({ onEnterContest }) => {
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-500">Duration:</span>
-                      <span className="text-gray-900">{contest.duration} hours</span>
+                      <span className="text-gray-900">
+                        {contest.duration >= 60 
+                          ? `${Math.floor(contest.duration / 60)}h ${contest.duration % 60}m`
+                          : `${contest.duration} minutes`
+                        }
+                      </span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-500">Problems:</span>

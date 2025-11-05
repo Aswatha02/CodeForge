@@ -1,16 +1,20 @@
 package com.CodeForge.CodeForge.services;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.CodeForge.CodeForge.dto.LeaderboardEntryDTO;
 import com.CodeForge.CodeForge.model.Contest;
 import com.CodeForge.CodeForge.model.ContestParticipant;
 import com.CodeForge.CodeForge.model.User;
+import com.CodeForge.CodeForge.model.UserProgress;
 import com.CodeForge.CodeForge.repository.ContestParticipantRepository;
 import com.CodeForge.CodeForge.repository.ContestRepository;
+import com.CodeForge.CodeForge.repository.UserProgressRepository;
 import com.CodeForge.CodeForge.repository.UserRepository;
 
 @Service
@@ -20,14 +24,30 @@ public class LeaderboardService {
     private final ContestParticipantRepository contestParticipantRepository;
     private final ContestRepository contestRepository;
     private final UserRepository userRepository;
+    private final UserProgressRepository userProgressRepository;
 
     @Autowired
     public LeaderboardService(ContestParticipantRepository contestParticipantRepository,
                              ContestRepository contestRepository,
-                             UserRepository userRepository) {
+                             UserRepository userRepository,
+                             UserProgressRepository userProgressRepository) {
         this.contestParticipantRepository = contestParticipantRepository;
         this.contestRepository = contestRepository;
         this.userRepository = userRepository;
+        this.userProgressRepository = userProgressRepository;
+    }
+
+    /**
+     * Get global leaderboard based on user progress
+     * @return List of leaderboard entries sorted by total score descending
+     */
+    public List<LeaderboardEntryDTO> getGlobalLeaderboard() {
+        List<UserProgress> allProgress = userProgressRepository.findAllWithUser();
+        
+        return allProgress.stream()
+                .map(progress -> new LeaderboardEntryDTO(progress.getUser(), progress))
+                .sorted((a, b) -> b.getTotalScore().compareTo(a.getTotalScore()))
+                .collect(Collectors.toList());
     }
 
     /**
@@ -39,8 +59,11 @@ public class LeaderboardService {
 
         Contest contest = contestRepository.findById(contestId)
                 .orElseThrow(() -> new RuntimeException("Contest not found with id: " + contestId));
-        // Your implementation here
-        return contestParticipantRepository.findByContestOrderByScoreDesc(contest);
+        // Use findByContestWithUser to eagerly fetch user data for JSON serialization
+        List<ContestParticipant> participants = contestParticipantRepository.findByContestWithUser(contest);
+        // Sort by score descending
+        participants.sort((a, b) -> b.getScore().compareTo(a.getScore()));
+        return participants;
     }
 
 

@@ -195,18 +195,12 @@ const ContestLeaderboard = ({ contestId, onBack }) => {
                 <th className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Problems Solved
                 </th>
-                <th className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                  Time
-                </th>
-                <th className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                  Penalties
-                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {leaderboard.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan="4" className="px-6 py-12 text-center text-gray-500">
                     <Trophy className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                     <p className="text-lg font-semibold">No participants yet</p>
                     <p className="text-sm mt-2">Be the first to join and compete!</p>
@@ -250,16 +244,6 @@ const ContestLeaderboard = ({ contestId, onBack }) => {
                     <td className="px-6 py-4 whitespace-nowrap text-center">
                       <div className="text-sm font-semibold text-gray-900">
                         {entry.problemsSolved}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-sm text-gray-600">
-                        {entry.totalTime ? `${Math.floor(entry.totalTime / 60)}m` : '-'}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-sm text-gray-600">
-                        {entry.penalties || 0}
                       </div>
                     </td>
                   </tr>

@@ -94,52 +94,76 @@ public class ContestController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Contest> getContest(@PathVariable Long id) {
-        Contest contest = contestService.getContest(id); // ✅ match service method
+    public ResponseEntity<ContestResponse> getContest(@PathVariable Long id) {
+        Contest contest = contestService.getContest(id);
         if (contest == null) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(contest);  
+        
+        // Convert to DTO to avoid lazy loading serialization issues
+        ContestResponse response = new ContestResponse(contest);
+        response.setParticipantCount(contestService.getParticipantCount(id));
+        response.setProblemCount(contestService.getContestProblems(id).size());
+        
+        return ResponseEntity.ok(response);  
     }
 
     @PostMapping
-    public ResponseEntity<ContestResponse> createContest(
+    public ResponseEntity<?> createContest(
             @RequestBody ContestCreateRequest request,
             Principal principal) { 
 
-        User user = getCurrentUser(principal);
-        if (user.getRole() != User.Role.ADMIN && user.getRole() != User.Role.PROBLEM_SETTER) {
-            return ResponseEntity.status(403).build();  
-        }
+        try {
+            User user = getCurrentUser(principal);
+            if (user.getRole() != User.Role.ADMIN && user.getRole() != User.Role.PROBLEM_SETTER) {
+                return ResponseEntity.status(403).body(Map.of("message", "Insufficient permissions"));  
+            }
 
-        Contest contest = new Contest();
-        contest.setTitle(request.getTitle());
-        contest.setDescription(request.getDescription());
-        contest.setStartTime(request.getStartTime());
-        contest.setEndTime(request.getEndTime());
-        contest.setDuration(request.getDuration());
-        contest.setIsPublic(request.getIsPublic());
-        contest.setMaxParticipants(request.getMaxParticipants());
-        contest.setCreatedBy(user);
-        
-        Contest savedContest = contestService.createContest(contest);
-        
-        // Add problems if provided
-        if (request.getProblemIds() != null && !request.getProblemIds().isEmpty()) {
-            for (Long problemId : request.getProblemIds()) {
-                try {
-                    contestService.addProblemToContest(savedContest.getId(), problemId, 100);
-                } catch (Exception e) {
-                    // Log error but continue
+            // Validate request
+            if (request.getTitle() == null || request.getTitle().trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Contest title is required"));
+            }
+            if (request.getStartTime() == null) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Start time is required"));
+            }
+            if (request.getEndTime() == null) {
+                return ResponseEntity.badRequest().body(Map.of("message", "End time is required"));
+            }
+
+            Contest contest = new Contest();
+            contest.setTitle(request.getTitle());
+            contest.setDescription(request.getDescription());
+            contest.setStartTime(request.getStartTime());
+            contest.setEndTime(request.getEndTime());
+            contest.setDuration(request.getDuration());
+            contest.setIsPublic(request.getIsPublic() != null ? request.getIsPublic() : true);
+            contest.setMaxParticipants(request.getMaxParticipants());
+            contest.setCreatedBy(user);
+            
+            Contest savedContest = contestService.createContest(contest);
+            
+            // Add problems if provided
+            if (request.getProblemIds() != null && !request.getProblemIds().isEmpty()) {
+                for (Long problemId : request.getProblemIds()) {
+                    try {
+                        contestService.addProblemToContest(savedContest.getId(), problemId, 100);
+                    } catch (Exception e) {
+                        System.err.println("Error adding problem " + problemId + " to contest: " + e.getMessage());
+                    }
                 }
             }
+            
+            ContestResponse response = new ContestResponse(savedContest);
+            response.setParticipantCount(0L);
+            response.setProblemCount(request.getProblemIds() != null ? request.getProblemIds().size() : 0);
+            
+            return ResponseEntity.status(201).body(response);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("message", "Internal server error: " + e.getMessage()));
         }
-        
-        ContestResponse response = new ContestResponse(savedContest);
-        response.setParticipantCount(0L);
-        response.setProblemCount(request.getProblemIds() != null ? request.getProblemIds().size() : 0);
-        
-        return ResponseEntity.status(201).body(response);  
     }
 
    @PutMapping("/{id}")
@@ -173,7 +197,7 @@ public ResponseEntity<Contest> updateContest(
     }
 
     @PostMapping("/{id}/join")
-    public ResponseEntity<Void> joinContest(
+    public ResponseEntity<?> joinContest(
             @PathVariable Long id,
             Principal principal) {
         try {
@@ -183,9 +207,12 @@ public ResponseEntity<Contest> updateContest(
                 .orElseThrow(() -> new RuntimeException("User not found: " + username));
 
             contestService.registerUser(id, dbUser.getId());
-            return ResponseEntity.ok().build();
+            return ResponseEntity.ok().body(Map.of("message", "Successfully joined the contest"));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(400).body(Map.of("message", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.status(400).build();
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("message", "Failed to join contest: " + e.getMessage()));
         }
     }
 
@@ -273,6 +300,40 @@ public ResponseEntity<List<ContestParticipant>> getParticipants(
                 pr.setDifficulty(cp.getProblem().getDifficulty().name());
                 pr.setPoints(cp.getPoints());
                 
+                // Code editor fields - CRITICAL for code generation
+                pr.setDescription(cp.getProblem().getDescription());
+                pr.setFunctionName(cp.getProblem().getFunctionName());
+                pr.setParameters(cp.getProblem().getParameters());
+                pr.setReturnType(cp.getProblem().getReturnType());
+                
+                // Map categories
+                List<CategoryDTO> categoryDTOs = cp.getProblem().getCategories().stream()
+                    .map(CategoryDTO::new)
+                    .collect(Collectors.toList());
+                pr.setCategories(categoryDTOs);
+                
+                // Map code templates
+                Map<String, ContestProblemResponse.CodeTemplate> templateMap = new HashMap<>();
+                cp.getProblem().getCodeTemplates().forEach(ct -> {
+                    templateMap.put(ct.getLanguage().name(), 
+                        new ContestProblemResponse.CodeTemplate(ct.getVisibleCode(), ct.getHiddenCode()));
+                });
+                pr.setCodeTemplates(templateMap);
+                
+                // Map test cases
+                List<ContestProblemResponse.TestCaseDTO> testCaseDTOs = cp.getProblem().getTestCases().stream()
+                    .map(tc -> {
+                        ContestProblemResponse.TestCaseDTO dto = new ContestProblemResponse.TestCaseDTO();
+                        dto.setId(tc.getId());
+                        dto.setInputData(tc.getInputData());
+                        dto.setExpectedOutput(tc.getExpectedOutput());
+                        dto.setIsSample(tc.getIsSample());
+                        dto.setWeight(tc.getWeight());
+                        return dto;
+                    })
+                    .collect(Collectors.toList());
+                pr.setTestCases(testCaseDTOs);
+                
                 // Get submission stats
                 List<Submission> allSubmissions = submissionRepository.findByProblemId(cp.getProblem().getId());
                 pr.setTotalSubmissions((int) allSubmissions.stream()
@@ -314,12 +375,6 @@ public ResponseEntity<List<ContestParticipant>> getParticipants(
         return ResponseEntity.ok(dashboard);
     }
     
-    // Get contest leaderboard
-    @GetMapping("/{id}/leaderboard")
-    public ResponseEntity<List<LeaderboardEntry>> getContestLeaderboard(@PathVariable Long id) {
-        return ResponseEntity.ok(getLeaderboard(id));
-    }
-    
     // Get contest problems
     @GetMapping("/{id}/problems")
     public ResponseEntity<List<ContestProblemResponse>> getContestProblemsList(
@@ -341,6 +396,40 @@ public ResponseEntity<List<ContestParticipant>> getParticipants(
                 pr.setTitle(cp.getProblem().getTitle());
                 pr.setDifficulty(cp.getProblem().getDifficulty().name());
                 pr.setPoints(cp.getPoints());
+                
+                // Code editor fields - CRITICAL for code generation
+                pr.setDescription(cp.getProblem().getDescription());
+                pr.setFunctionName(cp.getProblem().getFunctionName());
+                pr.setParameters(cp.getProblem().getParameters());
+                pr.setReturnType(cp.getProblem().getReturnType());
+                
+                // Map categories
+                List<CategoryDTO> categoryDTOs = cp.getProblem().getCategories().stream()
+                    .map(CategoryDTO::new)
+                    .collect(Collectors.toList());
+                pr.setCategories(categoryDTOs);
+                
+                // Map code templates
+                Map<String, ContestProblemResponse.CodeTemplate> templateMap = new HashMap<>();
+                cp.getProblem().getCodeTemplates().forEach(ct -> {
+                    templateMap.put(ct.getLanguage().name(), 
+                        new ContestProblemResponse.CodeTemplate(ct.getVisibleCode(), ct.getHiddenCode()));
+                });
+                pr.setCodeTemplates(templateMap);
+                
+                // Map test cases
+                List<ContestProblemResponse.TestCaseDTO> testCaseDTOs = cp.getProblem().getTestCases().stream()
+                    .map(tc -> {
+                        ContestProblemResponse.TestCaseDTO dto = new ContestProblemResponse.TestCaseDTO();
+                        dto.setId(tc.getId());
+                        dto.setInputData(tc.getInputData());
+                        dto.setExpectedOutput(tc.getExpectedOutput());
+                        dto.setIsSample(tc.getIsSample());
+                        dto.setWeight(tc.getWeight());
+                        return dto;
+                    })
+                    .collect(Collectors.toList());
+                pr.setTestCases(testCaseDTOs);
                 
                 // User-specific stats
                 List<Submission> userSubmissions = submissionRepository.findByUserIdAndProblemId(

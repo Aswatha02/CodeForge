@@ -48,12 +48,18 @@ public class ContestService {
     
     public Contest createContest(Contest contest) {
         // Validate contest data
-        if (contest.getStartTime().isBefore(LocalDateTime.now())) {
-            throw new IllegalArgumentException("Contest start time cannot be in the past");
-        }
-        
         if (contest.getEndTime().isBefore(contest.getStartTime())) {
             throw new IllegalArgumentException("Contest end time must be after start time");
+        }
+        
+        // Set initial status based on current time
+        LocalDateTime now = LocalDateTime.now();
+        if (now.isBefore(contest.getStartTime())) {
+            contest.setStatus(Contest.Status.UPCOMING);
+        } else if (now.isAfter(contest.getEndTime())) {
+            contest.setStatus(Contest.Status.COMPLETED);
+        } else {
+            contest.setStatus(Contest.Status.RUNNING);
         }
         
         return contestRepository.save(contest);
@@ -132,9 +138,14 @@ public class ContestService {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new UserNotFoundException(userId));
             
-        // Check if contest is open for registration
-        if (contest.getStatus() != Contest.Status.UPCOMING) {
+        // Check if contest is open for registration (allow UPCOMING and RUNNING)
+        if (contest.getStatus() == Contest.Status.COMPLETED) {
             throw new IllegalStateException("Registration is closed for this contest");
+        }
+        
+        // Check if user is already registered
+        if (contestParticipantRepository.existsByContestAndUser(contest, user)) {
+            throw new IllegalStateException("User is already registered for this contest");
         }
         
         ContestParticipant participant = new ContestParticipant();
@@ -189,8 +200,9 @@ public class ContestService {
         Problem problem = problemRepository.findById(problemId)
             .orElseThrow(() -> new ProblemNotFoundException(problemId));
         
-        if (contest.getStatus() != Contest.Status.UPCOMING) {
-            throw new IllegalStateException("Cannot add problems to a contest that has already started");
+        // Allow adding problems to UPCOMING or RUNNING contests (for flexibility)
+        if (contest.getStatus() == Contest.Status.COMPLETED) {
+            throw new IllegalStateException("Cannot add problems to a contest that has already ended");
         }
         
         // Check if problem is already in contest

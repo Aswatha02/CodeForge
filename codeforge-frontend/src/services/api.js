@@ -71,10 +71,10 @@ export const adminAPI = {
   rerunSubmission: (submissionId) => api.post(`/admin/submissions/${submissionId}/rerun`),
   
   // Contests
-  getContests: () => api.get('/admin/contests'),
-  createContest: (contestData) => api.post('/admin/contests', contestData),
-  updateContest: (contestId, contestData) => api.put(`/admin/contests/${contestId}`, contestData),
-  deleteContest: (contestId) => api.delete(`/admin/contests/${contestId}`),
+  getContests: () => api.get('/contests'),
+  createContest: (contestData) => api.post('/contests', contestData),
+  updateContest: (contestId, contestData) => api.put(`/contests/${contestId}`, contestData),
+  deleteContest: (contestId) => api.delete(`/contests/${contestId}`),
 
   // Test case management
   addTestCase: (problemId, testCaseData) => api.post(`/admin/problems/${problemId}/test-cases`, testCaseData),
@@ -143,11 +143,12 @@ export const userAPI = {
 
   // User submissions
   submitSolution: (problemId, submissionData) => api.post(`/problems/${problemId}/submissions`, submissionData),
-  getUserSubmissions: (userId) => api.get(`/submissions/user/${userId}`),
-  getSubmissionById: (id) => api.get(`/submissions/${id}`),
+  submitContestSolution: (contestId, problemId, submissionData) => api.post(`/contests/${contestId}/problems/${problemId}/submissions`, submissionData),
   getUserSubmissions: (filters) => api.get('/users/me/submissions', { params: filters }),
   getUserSubmissionsByProblem: (problemId) => api.get(`/users/me/problems/${problemId}/submissions`),
-  getSubmissionsByProblem: (problemId) => api.get(`/users/me/problems/${problemId}/submissions`),
+  getSubmissionsByProblem: (problemId) => api.get(`/problems/${problemId}/submissions`),
+  getContestSubmissions: (contestId) => api.get(`/contests/${contestId}/submissions/me`),
+  getSubmissionById: (id) => api.get(`/submissions/${id}`),
 
   // User contests
   getUserContests: () => api.get('/users/me/contests'),
@@ -162,7 +163,7 @@ export const userAPI = {
 
   // Leaderboard
   getLeaderboard: () => api.get('/leaderboard'),
-  getContestLeaderboard: (contestId) => api.get(`/leaderboard/contest/${contestId}`),
+  getContestLeaderboard: (contestId) => api.get(`/contests/${contestId}/leaderboard`),
 
   // Code Execution
   runCode: (executionData) => api.post('/execute', executionData),

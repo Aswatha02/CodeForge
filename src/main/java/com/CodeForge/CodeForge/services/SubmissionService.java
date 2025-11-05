@@ -28,6 +28,7 @@ import com.CodeForge.CodeForge.model.Problem;
 import com.CodeForge.CodeForge.model.Submission;
 import com.CodeForge.CodeForge.model.TestCase;
 import com.CodeForge.CodeForge.model.User;
+import com.CodeForge.CodeForge.model.UserProgress;
 import com.CodeForge.CodeForge.repository.CodeTemplateRepository;
 import com.CodeForge.CodeForge.repository.ContestParticipantRepository;
 import com.CodeForge.CodeForge.repository.ContestProblemRepository;
@@ -35,6 +36,7 @@ import com.CodeForge.CodeForge.repository.ContestRepository;
 import com.CodeForge.CodeForge.repository.ProblemRepository;
 import com.CodeForge.CodeForge.repository.SubmissionRepository;
 import com.CodeForge.CodeForge.repository.TestCaseRepository;
+import com.CodeForge.CodeForge.repository.UserProgressRepository;
 import com.CodeForge.CodeForge.repository.UserRepository;
 
 @Service
@@ -49,6 +51,7 @@ public class SubmissionService {
     private final ContestParticipantRepository contestParticipantRepository;
     private final TestCaseRepository testCaseRepository;
     private final CodeTemplateRepository codeTemplateRepository;
+    private final UserProgressRepository userProgressRepository;
     private final LeaderboardService leaderboardService;
     private final ObjectMapper objectMapper;
     private final FunctionSignatureService functionSignatureService;
@@ -62,6 +65,7 @@ public class SubmissionService {
                            ContestParticipantRepository contestParticipantRepository,
                            TestCaseRepository testCaseRepository,
                            CodeTemplateRepository codeTemplateRepository,
+                           UserProgressRepository userProgressRepository,
                            LeaderboardService leaderboardService,
                            FunctionSignatureService functionSignatureService,
                            ExecutionService executionService) {
@@ -73,6 +77,7 @@ public class SubmissionService {
         this.contestParticipantRepository = contestParticipantRepository;
         this.testCaseRepository = testCaseRepository;
         this.codeTemplateRepository = codeTemplateRepository;
+        this.userProgressRepository = userProgressRepository;
         this.leaderboardService = leaderboardService;
         this.objectMapper = new ObjectMapper();
         this.functionSignatureService = functionSignatureService;
@@ -137,6 +142,9 @@ public class SubmissionService {
 
             // Execute against all test cases
             submission = executeAgainstTestCases(submission, problem, testCases);
+            
+            // Update UserProgress for all submissions (contest or regular)
+            updateUserProgress(user, problem, submission);
             
             // Update contest participant score if applicable
             if (contestId != null && submission.getStatus() == Submission.Status.ACCEPTED) {
@@ -820,5 +828,30 @@ private String[] parseJavaExecutionCode(String executionCode) {
 
     public Submission getSubmissionById(Long submissionId) {
         return submissionRepository.findById(submissionId).orElse(null);
+    }
+
+    public List<Submission> getUserAcceptedSubmissions(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        return submissionRepository.findByUser(user).stream()
+                .filter(submission -> submission.getStatus() == Submission.Status.ACCEPTED)
+                .sorted((s1, s2) -> s2.getSubmittedAt().compareTo(s1.getSubmittedAt())) // Most recent first
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Update user progress after a submission
+     */
+    private void updateUserProgress(User user, Problem problem, Submission submission) {
+        // Get or create user progress
+        UserProgress progress = userProgressRepository.findByUserId(user.getId())
+                .orElseGet(() -> {
+                    UserProgress newProgress = new UserProgress(user);
+                    return userProgressRepository.save(newProgress);
+                });
+
+        // Use the built-in update method from UserProgress
+        progress.updateFromSubmission(submission, problem);
+        userProgressRepository.save(progress);
     }
 }

@@ -55,4 +55,10 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
 
     @Query("SELECT s FROM Submission s WHERE s.user = :user ORDER BY s.submittedAt DESC")
     List<Submission> findByUserOrderBySubmittedAtDesc(@Param("user") User user);
+
+    // Check if user has attempted a problem
+    boolean existsByUserAndProblem(User user, Problem problem);
+
+    // Find submissions by problem
+    List<Submission> findByProblem(Problem problem);
 }

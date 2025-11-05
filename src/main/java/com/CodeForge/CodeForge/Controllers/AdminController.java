@@ -87,7 +87,6 @@ public class AdminController {
             stats.put("totalSubmissions", submissionService.getTotalSubmissions());
             stats.put("activeContests", contestService.getActiveContestsCount());
             stats.put("dailyActiveUsers", userService.getDailyActiveUsers());
-            stats.put("systemUptime", "99.9%");
             return ResponseEntity.ok(stats);
         } catch (Exception e) {
             return ResponseEntity.status(500).build();

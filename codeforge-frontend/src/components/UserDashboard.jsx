@@ -15,6 +15,7 @@ const UserDashboard = ({ onLogout }) => {
   const [selectedProblem, setSelectedProblem] = useState(null);
   const [selectedContestId, setSelectedContestId] = useState(null);
   const [contestView, setContestView] = useState(null); // 'dashboard' or 'leaderboard'
+  const [problemContestId, setProblemContestId] = useState(null); // Track if problem is from contest
   const [stats, setStats] = useState({
     problemsSolved: 0,
     totalSubmissions: 0,
@@ -37,6 +38,8 @@ const UserDashboard = ({ onLogout }) => {
       }
       // Fetch user stats
       const statsResponse = await userAPI.getUserStats();
+      console.log('📊 User stats response:', statsResponse.data);
+      console.log('✅ Solved problems:', statsResponse.data.solvedProblems);
       setStats(statsResponse.data);
     } catch (error) {
       console.error('Error fetching user data:', error);
@@ -143,6 +146,43 @@ const UserDashboard = ({ onLogout }) => {
               </div>
             </div>
 
+            {/* Problems Solved */}
+            <div className="bg-surface rounded-lg p-6 border border-border mb-8">
+              <h3 className="text-xl font-bold text-text mb-4">Problems Solved ({stats.problemsSolved || 0})</h3>
+              <div className="space-y-2">
+                {stats.solvedProblems?.length > 0 ? (
+                  stats.solvedProblems.map((problem, index) => (
+                    <div key={index} className="flex items-center justify-between py-3 px-4 bg-surface-light rounded-md hover:bg-surface-dark transition-colors">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-8 h-8 bg-green-500/20 text-green-400 rounded-full flex items-center justify-center">
+                          ✓
+                        </div>
+                        <div>
+                          <div className="text-text font-medium">{problem.title}</div>
+                          <div className="text-sm text-text-muted">{problem.category}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-3">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          problem.difficulty === 'EASY' ? 'bg-green-500/20 text-green-400' :
+                          problem.difficulty === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400' :
+                          'bg-red-500/20 text-red-400'
+                        }`}>
+                          {problem.difficulty}
+                        </span>
+                        <span className="text-text-muted text-sm">{problem.solvedAt}</span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="text-text-muted">No problems solved yet</div>
+                    <div className="text-sm text-text-muted mt-2">Start solving problems to see them here!</div>
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Recent Activity */}
             <div className="bg-surface rounded-lg p-6 border border-border">
               <h3 className="text-xl font-bold text-text mb-4">Recent Activity</h3>
@@ -173,10 +213,26 @@ const UserDashboard = ({ onLogout }) => {
         return <ProblemList onProblemSelect={setSelectedProblem} />;
       case 'contests':
         if (selectedContestId && contestView === 'dashboard') {
-          return <ContestDashboard contestId={selectedContestId} onBack={() => {
-            setSelectedContestId(null);
-            setContestView(null);
-          }} />;
+          return <ContestDashboard 
+            contestId={selectedContestId} 
+            onBack={() => {
+              setSelectedContestId(null);
+              setContestView(null);
+            }}
+            onProblemSelect={async (problem, contestId) => {
+              // Fetch full problem data instead of using contest's partial data
+              try {
+                const response = await userAPI.getProblemById(problem.id);
+                setSelectedProblem(response.data);
+                setProblemContestId(contestId);
+              } catch (error) {
+                console.error('Error fetching problem:', error);
+                // Fallback to contest problem data if fetch fails
+                setSelectedProblem(problem);
+                setProblemContestId(contestId);
+              }
+            }}
+          />;
         } else if (selectedContestId && contestView === 'leaderboard') {
           return <ContestLeaderboard contestId={selectedContestId} onBack={() => {
             setSelectedContestId(null);
@@ -291,7 +347,11 @@ const UserDashboard = ({ onLogout }) => {
           {selectedProblem ? (
             <CodeEditor
               problem={selectedProblem}
-              onBack={() => setSelectedProblem(null)}
+              onBack={() => {
+                setSelectedProblem(null);
+                setProblemContestId(null);
+              }}
+              contestId={problemContestId}
             />
           ) : (
             renderActiveTab()

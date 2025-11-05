@@ -1,21 +1,35 @@
 import React, { useState, useEffect } from 'react';
-import { userAPI } from '../services/api';
+import { userAPI, contestAPI } from '../services/api';
 
-const Submissions = ({ problemId }) => {
+const Submissions = ({ problemId, contestId }) => {
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchSubmissions();
-  }, [problemId]);
+  }, [problemId, contestId]);
 
   const fetchSubmissions = async () => {
     try {
       setLoading(true);
-      const response = await userAPI.getSubmissionsByProblem(problemId);
-      setSubmissions(response.data || []);
+      let response;
+      
+      if (contestId) {
+        // Fetch contest-specific submissions for this problem
+        // Note: We need to filter by problemId from all contest submissions
+        const allContestSubmissions = await userAPI.getContestSubmissions(contestId);
+        const problemSubmissions = allContestSubmissions.data.filter(
+          sub => sub.problemId === problemId || sub.problem?.id === problemId
+        );
+        setSubmissions(problemSubmissions || []);
+      } else {
+        // Regular problem submissions
+        response = await userAPI.getSubmissionsByProblem(problemId);
+        setSubmissions(response.data || []);
+      }
     } catch (error) {
       console.error('Error fetching submissions:', error);
+      setSubmissions([]);
     } finally {
       setLoading(false);
     }
@@ -46,51 +60,50 @@ const Submissions = ({ problemId }) => {
     );
   }
 
+  // Don't render anything if no submissions
+  if (submissions.length === 0) {
+    return null;
+  }
+
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-medium text-white">Recent Submissions</h3>
       
-      {submissions.length === 0 ? (
-        <div className="text-gray-400 text-center py-8">
-          No submissions yet
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {submissions.map((submission) => (
-            <div key={submission.id} className="bg-gray-800 rounded-lg p-4 border border-gray-600">
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-3">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(submission.status)}`}>
-                      {submission.status?.replace('_', ' ')}
-                    </span>
-                    <span className="text-sm text-gray-400">{submission.language}</span>
-                  </div>
-                  
-                  {submission.errorMessage && (
-                    <div className="mt-2 text-sm text-red-400">
-                      Error: {submission.errorMessage}
-                    </div>
-                  )}
-                  
-                  {submission.passedTestCases !== undefined && submission.totalTestCases !== undefined && (
-                    <div className="mt-1 text-sm text-gray-400">
-                      Test Cases: {submission.passedTestCases}/{submission.totalTestCases} passed
-                    </div>
-                  )}
+      <div className="space-y-2">
+        {submissions.map((submission) => (
+          <div key={submission.id} className="bg-gray-800 rounded-lg p-4 border border-gray-600">
+            <div className="flex justify-between items-start">
+              <div className="flex-1">
+                <div className="flex items-center space-x-3">
+                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(submission.status)}`}>
+                    {submission.status?.replace('_', ' ')}
+                  </span>
+                  <span className="text-sm text-gray-400">{submission.language}</span>
                 </div>
                 
-                <div className="text-right text-sm text-gray-400">
-                  <div>{formatDate(submission.submittedAt)}</div>
-                  {submission.executionTime && (
-                    <div>{submission.executionTime}ms</div>
-                  )}
-                </div>
+                {submission.errorMessage && (
+                  <div className="mt-2 text-sm text-red-400">
+                    Error: {submission.errorMessage}
+                  </div>
+                )}
+                
+                {submission.passedTestCases !== undefined && submission.totalTestCases !== undefined && (
+                  <div className="mt-1 text-sm text-gray-400">
+                    Test Cases: {submission.passedTestCases}/{submission.totalTestCases} passed
+                  </div>
+                )}
+              </div>
+              
+              <div className="text-right text-sm text-gray-400">
+                <div>{formatDate(submission.submittedAt)}</div>
+                {submission.executionTime && (
+                  <div>{submission.executionTime}ms</div>
+                )}
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

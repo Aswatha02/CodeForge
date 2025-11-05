@@ -5,7 +5,7 @@ import ProblemDetailsView from './ProblemDetailsView';
 import TestCasesSection from './TestCasesSection';
 import Submissions from './Submissions';
 
-const CodeEditor = ({ problem, onBack }) => {
+const CodeEditor = ({ problem, onBack, contestId }) => {
   const [activeTab, setActiveTab] = useState('editor');
   const [code, setCode] = useState('');
   const [language, setLanguage] = useState('JAVA');
@@ -24,8 +24,7 @@ const CodeEditor = ({ problem, onBack }) => {
   ];
 
   const tabs = [
-    { id: 'editor', name: 'Code Editor', icon: '💻' },
-    { id: 'submissions', name: 'Submissions', icon: '📋' }
+    { id: 'editor', name: 'Code Editor', icon: '💻' }
   ];
 
   // Parse parameters safely (handles JSON string or array)
@@ -186,15 +185,27 @@ const CodeEditor = ({ problem, onBack }) => {
   };
 
   const setDefaultCode = useCallback(() => {
+    // Debug logging
+    console.log('🔍 CodeEditor - Problem data:', {
+      functionName: problem?.functionName,
+      parameters: problem?.parameters,
+      parsedParameters: parseParameters,
+      returnType: problem?.returnType,
+      hasCodeTemplate: !!problem?.codeTemplates?.[language]?.visibleCode
+    });
+
     if (problem?.codeTemplates?.[language]?.visibleCode) {
+      console.log('✅ Using stored code template for', language);
       setCode(problem.codeTemplates[language].visibleCode);
       return;
     }
 
+    console.log('⚠️ No stored template, generating fallback for', language);
     // Use actual problem values or sane fallbacks
     const actualReturnType = problem?.returnType || 'String';
     const actualFunctionName = problem?.functionName || 'solve';
     const actualParamsStr = getParametersString(language);
+    console.log('📝 Generated params string:', actualParamsStr);
 
     const fallbackTemplates = {
       JAVA: `public class Solution {
@@ -377,8 +388,15 @@ public:
         language
       };
       
-      // Use the correct endpoint with problemId in the URL
-      const response = await userAPI.submitSolution(problem.id, request);
+      let response;
+      if (contestId) {
+        // Contest submission
+        response = await userAPI.submitContestSolution(contestId, problem.id, request);
+      } else {
+        // Regular problem submission
+        response = await userAPI.submitSolution(problem.id, request);
+      }
+      
       setSubmissionResult(response.data);
       
       // Refresh submissions
@@ -607,7 +625,7 @@ public:
       case 'editor':
         return renderEditorTab();
       case 'submissions':
-        return <Submissions problemId={problem.id} key={submissionsKey} />;
+        return <Submissions problemId={problem.id} contestId={contestId} key={submissionsKey} />;
       default:
         return null;
     }
@@ -665,7 +683,9 @@ public:
                     {problem.difficulty}
                   </span>
                   <span className="text-sm text-gray-400">
-                    {problem.category?.name || 'Uncategorized'}
+                    {problem.categories && problem.categories.length > 0 
+                      ? problem.categories.map(cat => cat.name).join(', ')
+                      : 'Uncategorized'}
                   </span>
                 </div>
               </div>

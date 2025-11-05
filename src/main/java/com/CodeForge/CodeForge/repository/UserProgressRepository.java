@@ -57,4 +57,8 @@ public interface UserProgressRepository extends JpaRepository<UserProgress, Long
     default Optional<UserProgress> findByUserId(Long userId) {
         return findByUser_Id(userId);
     }
+
+    // Find all user progress with user eagerly fetched for leaderboard
+    @Query("SELECT up FROM UserProgress up JOIN FETCH up.user")
+    List<UserProgress> findAllWithUser();
 }

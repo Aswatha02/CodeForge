@@ -7,12 +7,22 @@ import CodeTemplatesTab from "./CodeTemplatesTab"
 import ProblemValidationTab from "./ProblemValidationTab"
 
 export default function AdminDashboard({ onLogout }) {
+  // Helper function to calculate contest status
+  const getContestStatus = (contest) => {
+    const now = new Date();
+    const startTime = new Date(contest.startTime);
+    const endTime = new Date(contest.endTime);
+
+    if (now < startTime) return 'UPCOMING';
+    if (now >= startTime && now <= endTime) return 'RUNNING';
+    return 'COMPLETED';
+  };
+
   const [stats, setStats] = useState({
     totalProblems: 0,
     totalUsers: 0,
     totalSubmissions: 0,
     activeContests: 0,
-    systemUptime: "99.9%",
     dailyActiveUsers: 0
   })
 
@@ -736,7 +746,11 @@ public:
           language,
           visibleCode: template.visibleCode,
           hiddenCode: template.hiddenCode
-        }))
+        })),
+        // Convert parameters array to JSON string if it's an array
+        parameters: Array.isArray(problemFormData.parameters) 
+          ? JSON.stringify(problemFormData.parameters) 
+          : problemFormData.parameters
       }
 
       console.log("=== UPDATING PROBLEM ===")
@@ -894,7 +908,11 @@ public:
           language,
           visibleCode: template.visibleCode,
           hiddenCode: template.hiddenCode
-        }))
+        })),
+        // Convert parameters array to JSON string if it's an array
+        parameters: Array.isArray(problemFormData.parameters) 
+          ? JSON.stringify(problemFormData.parameters) 
+          : problemFormData.parameters
       }
 
       console.log("=== SENDING TO BACKEND ===")
@@ -1017,7 +1035,35 @@ public:
     setLoading(true)
     setError("")
     try {
-      await adminAPI.createContest(contestFormData)
+      // Calculate duration in minutes
+      const start = new Date(contestFormData.startTime);
+      const end = new Date(contestFormData.endTime);
+      const durationMinutes = Math.floor((end - start) / (1000 * 60));
+
+      // Format dates to ISO 8601 format for backend (add seconds if missing)
+      const formatDateTime = (dateTimeStr) => {
+        // If the datetime string doesn't have seconds, add them
+        if (dateTimeStr && dateTimeStr.length === 16) {
+          return dateTimeStr + ':00';
+        }
+        return dateTimeStr;
+      };
+
+      const contestData = {
+        title: contestFormData.title,
+        description: contestFormData.description,
+        startTime: formatDateTime(contestFormData.startTime),
+        endTime: formatDateTime(contestFormData.endTime),
+        duration: durationMinutes,
+        problemIds: contestFormData.problemIds,
+        isPublic: true
+      };
+
+      console.log("Sending contest data:", contestData);
+      console.log("Start time:", contestData.startTime);
+      console.log("End time:", contestData.endTime);
+      
+      await adminAPI.createContest(contestData)
       setShowContestModal(false)
       setContestFormData({
         title: "",
@@ -1029,10 +1075,11 @@ public:
       fetchContests() // Refresh the contests list
     } catch (error) {
       console.error("Error creating contest:", error)
+      console.error("Error response:", error.response?.data)
       if (error.response?.status === 403) {
         setError("You don't have permission to create contests.")
       } else {
-        setError("Failed to create contest")
+        setError(`Failed to create contest: ${error.response?.data?.message || error.message}`)
       }
     }
     setLoading(false)
@@ -1088,7 +1135,10 @@ public:
     }
     if (activeTab === "submissions") fetchSubmissions()
     if (activeTab === "categories") fetchCategories()
-    if (activeTab === "contests") fetchContests()
+    if (activeTab === "contests") {
+      fetchContests()
+      fetchProblems() // Fetch problems for contest creation
+    }
   }, [activeTab])
 
   const ErrorAlert = () => (
@@ -1223,12 +1273,6 @@ public:
                   value={stats.activeContests}
                   color="bg-orange-500/20 text-orange-400"
                   icon="🏆"
-                />
-                <StatCard
-                  title="System Uptime"
-                  value={stats.systemUptime}
-                  color="bg-emerald-500/20 text-emerald-400"
-                  icon="⚡"
                 />
                 <StatCard
                   title="Daily Active Users"
@@ -1760,18 +1804,20 @@ public:
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {contests.map((contest) => (
+                    {contests.map((contest) => {
+                      const status = getContestStatus(contest);
+                      return (
                       <tr key={contest.id} className="hover:bg-surface-light transition-colors">
                         <td className="px-6 py-4 font-medium text-text">{contest.title}</td>
                         <td className="px-6 py-4 text-text-muted">{contest.startTime}</td>
                         <td className="px-6 py-4 text-text-muted">{contest.endTime}</td>
                         <td className="px-6 py-4">
                           <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                            contest.status === 'UPCOMING' ? 'bg-blue-500/20 text-blue-400' :
-                            contest.status === 'RUNNING' ? 'bg-green-500/20 text-green-400' :
+                            status === 'UPCOMING' ? 'bg-blue-500/20 text-blue-400' :
+                            status === 'RUNNING' ? 'bg-green-500/20 text-green-400' :
                             'bg-gray-500/20 text-gray-400'
                           }`}>
-                            {contest.status}
+                            {status}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-text">{contest.participantCount}</td>
@@ -1792,7 +1838,8 @@ public:
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1812,7 +1859,7 @@ public:
               {/* Submission Filters */}
               <div className="bg-surface rounded-lg p-6 border border-border mb-6">
                 <h3 className="text-lg font-bold text-text mb-4">Filters</h3>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                   <input
                     type="text"
                     placeholder="Search by user..."
@@ -1850,6 +1897,12 @@ public:
                     <option value="PYTHON">Python</option>
                     <option value="JAVASCRIPT">JavaScript</option>
                   </select>
+                  <button
+                    onClick={fetchSubmissions}
+                    className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-md"
+                  >
+                    Apply Filters
+                  </button>
                 </div>
               </div>
 

@@ -25,7 +25,10 @@ import com.CodeForge.CodeForge.dto.ProblemRequest;
 import com.CodeForge.CodeForge.dto.ProblemResponseDTO;
 import com.CodeForge.CodeForge.model.CodeTemplate;
 import com.CodeForge.CodeForge.model.Problem;
+import com.CodeForge.CodeForge.model.Submission;
 import com.CodeForge.CodeForge.model.User;
+import com.CodeForge.CodeForge.repository.SubmissionRepository;
+import com.CodeForge.CodeForge.repository.UserProgressRepository;
 import com.CodeForge.CodeForge.services.ProblemService;
 
 @RestController
@@ -37,12 +40,50 @@ public class ProblemController {
     @Autowired
     private ProblemService problemService;
 
+    @Autowired
+    private SubmissionRepository submissionRepository;
+
+    @Autowired
+    private UserProgressRepository userProgressRepository;
+
     @GetMapping
-    public ResponseEntity<List<ProblemResponseDTO>> getAllProblems() {
+    public ResponseEntity<List<ProblemResponseDTO>> getAllProblems(@AuthenticationPrincipal User currentUser) {
         try {
             List<Problem> problems = problemService.getAllProblems();
             List<ProblemResponseDTO> response = problems.stream()
-                    .map(ProblemResponseDTO::new)
+                    .map(problem -> {
+                        ProblemResponseDTO dto = new ProblemResponseDTO(problem);
+                        
+                        // Calculate submission statistics
+                        List<Submission> problemSubmissions = submissionRepository.findByProblem(problem);
+                        dto.setSubmissionCount(problemSubmissions.size());
+                        
+                        if (!problemSubmissions.isEmpty()) {
+                            long acceptedCount = problemSubmissions.stream()
+                                    .filter(s -> s.getStatus() == Submission.Status.ACCEPTED)
+                                    .count();
+                            double acceptanceRate = (acceptedCount * 100.0) / problemSubmissions.size();
+                            dto.setAcceptanceRate(Math.round(acceptanceRate * 100.0) / 100.0);
+                        } else {
+                            dto.setAcceptanceRate(0.0);
+                        }
+                        
+                        // Determine user status if user is logged in
+                        if (currentUser != null) {
+                            boolean hasSolved = userProgressRepository.hasUserSolvedProblem(currentUser.getId(), problem.getId());
+                            if (hasSolved) {
+                                dto.setUserStatus("solved");
+                            } else {
+                                // Check if user has attempted
+                                boolean hasAttempted = submissionRepository.existsByUserAndProblem(currentUser, problem);
+                                dto.setUserStatus(hasAttempted ? "attempted" : "unsolved");
+                            }
+                        } else {
+                            dto.setUserStatus("unsolved");
+                        }
+                        
+                        return dto;
+                    })
                     .collect(Collectors.toList());
             return ResponseEntity.ok(response);
         } catch (Exception e) {

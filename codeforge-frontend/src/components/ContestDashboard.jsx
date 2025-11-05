@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { contestAPI } from '../services/api';
 import { Clock, Trophy, Users, Code, CheckCircle, XCircle, AlertCircle, ArrowLeft } from 'lucide-react';
 
-const ContestDashboard = ({ contestId, onBack }) => {
+const ContestDashboard = ({ contestId, onBack, onProblemSelect }) => {
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -27,6 +27,8 @@ const ContestDashboard = ({ contestId, onBack }) => {
     try {
       setLoading(true);
       const response = await contestAPI.getContestDashboard(contestId);
+      console.log('📊 Contest Dashboard Response:', response.data);
+      console.log('📝 Problems:', response.data.problems);
       setDashboard(response.data);
       setTimeRemaining(response.data.contest.timeRemaining);
       setError(null);
@@ -85,6 +87,13 @@ const ContestDashboard = ({ contestId, onBack }) => {
   }
 
   const { contest, problems, userRank, topRanks, stats } = dashboard;
+
+  const handleProblemClick = (problem) => {
+    // Pass problem to parent with contest context
+    if (onProblemSelect) {
+      onProblemSelect(problem, contestId);
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
@@ -202,10 +211,7 @@ const ContestDashboard = ({ contestId, onBack }) => {
                 <div
                   key={problem.id}
                   className="p-6 hover:bg-gray-50 cursor-pointer transition-colors"
-                  onClick={() => {
-                    // Open problem in new tab or handle navigation
-                    alert(`Opening problem: ${problem.title} (ID: ${problem.id})`);
-                  }}
+                  onClick={() => handleProblemClick(problem)}
                 >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-4 flex-1">

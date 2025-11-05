@@ -1,5 +1,6 @@
 package com.CodeForge.CodeForge.Controllers;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,11 +17,14 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.CodeForge.CodeForge.model.Submission;
 import com.CodeForge.CodeForge.model.User;
 import com.CodeForge.CodeForge.model.UserProgress;
 import com.CodeForge.CodeForge.services.SubmissionService;
+import com.CodeForge.CodeForge.services.UserProgressBackfillService;
 import com.CodeForge.CodeForge.services.UserService;
 import com.CodeForge.CodeForge.util.JwtUtil;
 
@@ -31,14 +35,18 @@ public class UserController {
 
     private final UserService userService;
     private final SubmissionService submissionService;
+    private final UserProgressBackfillService backfillService;
     private final JwtUtil jwtUtil;
     private final UserDetailsService userDetailsService;
 
     // Constructor injection
     @Autowired
-    public UserController(UserService userService, SubmissionService submissionService, JwtUtil jwtUtil, @Qualifier("customUserDetailsService") UserDetailsService userDetailsService) {
+    public UserController(UserService userService, SubmissionService submissionService, 
+                         UserProgressBackfillService backfillService, JwtUtil jwtUtil, 
+                         @Qualifier("customUserDetailsService") UserDetailsService userDetailsService) {
         this.userService = userService;
         this.submissionService = submissionService;
+        this.backfillService = backfillService;
         this.jwtUtil = jwtUtil;
         this.userDetailsService = userDetailsService;
     }
@@ -207,6 +215,60 @@ public class UserController {
         }
     }
 
+    @GetMapping("/me/submissions")
+    public ResponseEntity<?> getCurrentUserSubmissions(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String language,
+            @RequestParam(required = false) String problemId) {
+        try {
+            // Get current user from security context
+            org.springframework.security.core.Authentication authentication = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            String username = authentication.getName();
+            User user = userService.findByUsername(username);
+
+            // Get all submissions for the user
+            List<Submission> submissions = submissionService.getRecentSubmissionsByUser(user.getId(), 100); // Get last 100
+            
+            // Apply filters
+            if (status != null && !status.isEmpty()) {
+                submissions = submissions.stream()
+                    .filter(s -> s.getStatus().name().equalsIgnoreCase(status))
+                    .collect(java.util.stream.Collectors.toList());
+            }
+            if (language != null && !language.isEmpty()) {
+                submissions = submissions.stream()
+                    .filter(s -> s.getLanguage().name().equalsIgnoreCase(language))
+                    .collect(java.util.stream.Collectors.toList());
+            }
+            if (problemId != null && !problemId.isEmpty()) {
+                submissions = submissions.stream()
+                    .filter(s -> s.getProblem().getId().toString().equals(problemId) || 
+                                s.getProblem().getTitle().toLowerCase().contains(problemId.toLowerCase()))
+                    .collect(java.util.stream.Collectors.toList());
+            }
+
+            // Convert to response format
+            List<Map<String, Object>> submissionList = new ArrayList<>();
+            for (Submission submission : submissions) {
+                Map<String, Object> submissionData = new HashMap<>();
+                submissionData.put("id", submission.getId());
+                submissionData.put("problemId", submission.getProblem().getId());
+                submissionData.put("problem", Map.of("title", submission.getProblem().getTitle()));
+                submissionData.put("status", submission.getStatus());
+                submissionData.put("language", submission.getLanguage());
+                submissionData.put("executionTime", submission.getExecutionTime());
+                submissionData.put("memoryUsed", submission.getMemoryUsed());
+                submissionData.put("submittedAt", submission.getSubmittedAt());
+                submissionList.add(submissionData);
+            }
+
+            return ResponseEntity.ok(submissionList);
+        } catch (Exception e) {
+            System.out.println("Error fetching user submissions: " + e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @GetMapping("/me/stats")
     public ResponseEntity<?> getCurrentUserStats() {
         try {
@@ -218,7 +280,11 @@ public class UserController {
             Map<String, Object> stats = new HashMap<>();
             stats.put("problemsSolved", submissionService.getUserAcceptedSubmissionCount(user.getId()));
             stats.put("totalSubmissions", submissionService.getUserSubmissionCount(user.getId()));
-            stats.put("rank", userService.getUserRank(user.getId()));
+            stats.put("ranking", userService.getUserRank(user.getId()));
+            
+            // Calculate current streak
+            int currentStreak = calculateCurrentStreak(user.getId());
+            stats.put("currentStreak", currentStreak);
 
             // Calculate accuracy
             long total = (Long) stats.get("totalSubmissions");
@@ -231,9 +297,138 @@ public class UserController {
             stats.put("medium", 0);
             stats.put("hard", 0);
 
+            // Get recent activity (last 5 submissions)
+            List<Submission> recentSubmissions = submissionService.getRecentSubmissionsByUser(user.getId(), 5);
+            List<Map<String, Object>> recentActivity = new ArrayList<>();
+            for (Submission submission : recentSubmissions) {
+                Map<String, Object> activity = new HashMap<>();
+                activity.put("description", "Submitted solution for " + submission.getProblem().getTitle());
+                activity.put("timestamp", submission.getSubmittedAt());
+                activity.put("status", submission.getStatus());
+                recentActivity.add(activity);
+            }
+            stats.put("recentActivity", recentActivity);
+
+            // Get solved problems (problems with accepted submissions)
+            List<Submission> acceptedSubmissions = submissionService.getUserAcceptedSubmissions(user.getId());
+            System.out.println("DEBUG: Found " + acceptedSubmissions.size() + " accepted submissions");
+            
+            List<Map<String, Object>> solvedProblems = new ArrayList<>();
+            // Use a set to track unique problems
+            java.util.Set<Long> seenProblemIds = new java.util.HashSet<>();
+            
+            for (Submission submission : acceptedSubmissions) {
+                if (!seenProblemIds.contains(submission.getProblem().getId())) {
+                    seenProblemIds.add(submission.getProblem().getId());
+                    try {
+                        Map<String, Object> problemInfo = new HashMap<>();
+                        problemInfo.put("title", submission.getProblem().getTitle());
+                        problemInfo.put("difficulty", submission.getProblem().getDifficulty());
+                        
+                        // Get first category name or default to "Uncategorized"
+                        String categoryName = "Uncategorized";
+                        try {
+                            if (submission.getProblem().getCategories() != null && !submission.getProblem().getCategories().isEmpty()) {
+                                categoryName = submission.getProblem().getCategories().iterator().next().getName();
+                            }
+                        } catch (Exception e) {
+                            System.out.println("DEBUG: Could not fetch category for problem " + submission.getProblem().getId() + ": " + e.getMessage());
+                            // Keep default "Uncategorized"
+                        }
+                        problemInfo.put("category", categoryName);
+                        problemInfo.put("solvedAt", submission.getSubmittedAt().toLocalDate().toString());
+                        solvedProblems.add(problemInfo);
+                        System.out.println("DEBUG: Added solved problem: " + submission.getProblem().getTitle());
+                    } catch (Exception e) {
+                        System.out.println("DEBUG: Error processing problem " + submission.getProblem().getId() + ": " + e.getMessage());
+                    }
+                }
+            }
+            System.out.println("DEBUG: Total unique solved problems: " + solvedProblems.size());
+            stats.put("solvedProblems", solvedProblems);
+
             return ResponseEntity.ok(stats);
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Calculate the current streak of consecutive days with accepted submissions
+     */
+    private int calculateCurrentStreak(Long userId) {
+        try {
+            List<Submission> acceptedSubmissions = submissionService.getUserAcceptedSubmissions(userId);
+            
+            if (acceptedSubmissions.isEmpty()) {
+                return 0;
+            }
+
+            // Get unique dates of accepted submissions (sorted descending)
+            java.util.Set<java.time.LocalDate> submissionDates = new java.util.TreeSet<>(java.util.Collections.reverseOrder());
+            for (Submission submission : acceptedSubmissions) {
+                submissionDates.add(submission.getSubmittedAt().toLocalDate());
+            }
+
+            java.time.LocalDate today = java.time.LocalDate.now();
+            java.time.LocalDate yesterday = today.minusDays(1);
+            
+            // Check if user has submitted today or yesterday (to keep streak alive)
+            java.time.LocalDate mostRecentDate = submissionDates.iterator().next();
+            if (!mostRecentDate.equals(today) && !mostRecentDate.equals(yesterday)) {
+                return 0; // Streak is broken
+            }
+
+            // Count consecutive days
+            int streak = 0;
+            java.time.LocalDate expectedDate = mostRecentDate;
+            
+            for (java.time.LocalDate date : submissionDates) {
+                if (date.equals(expectedDate)) {
+                    streak++;
+                    expectedDate = expectedDate.minusDays(1);
+                } else {
+                    break; // Streak broken
+                }
+            }
+
+            return streak;
+        } catch (Exception e) {
+            System.out.println("Error calculating streak: " + e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Admin endpoint to backfill UserProgress from existing submissions
+     * This is a one-time migration endpoint
+     */
+    @PostMapping("/admin/backfill-progress")
+    public ResponseEntity<?> backfillUserProgress() {
+        try {
+            // TODO: Add admin authorization check here
+            Map<String, Object> result = backfillService.backfillUserProgress();
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("success", false);
+            error.put("message", "Backfill failed: " + e.getMessage());
+            return ResponseEntity.status(500).body(error);
+        }
+    }
+
+    /**
+     * Get backfill status
+     */
+    @GetMapping("/admin/backfill-status")
+    public ResponseEntity<?> getBackfillStatus() {
+        try {
+            Map<String, Object> status = backfillService.getBackfillStatus();
+            return ResponseEntity.ok(status);
+        } catch (Exception e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "Failed to get status: " + e.getMessage());
+            return ResponseEntity.status(500).body(error);
         }
     }
 }

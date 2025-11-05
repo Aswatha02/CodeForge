@@ -6,10 +6,19 @@ const ProblemList = ({ onProblemSelect }) => {
   const [problems, setProblems] = useState([]);
   const [filteredProblems, setFilteredProblems] = useState([]);
   const [categories, setCategories] = useState([]);
+  
+  // Applied filters (used for actual filtering)
   const [difficulty, setDifficulty] = useState('all');
   const [status, setStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  
+  // Temporary filters (used in UI before applying)
+  const [tempDifficulty, setTempDifficulty] = useState('all');
+  const [tempStatus, setTempStatus] = useState('all');
+  const [tempSearchTerm, setTempSearchTerm] = useState('');
+  const [tempSelectedCategory, setTempSelectedCategory] = useState('all');
+  
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -20,6 +29,24 @@ const ProblemList = ({ onProblemSelect }) => {
   useEffect(() => {
     filterProblems();
   }, [problems, difficulty, status, searchTerm, selectedCategory]);
+
+  const handleApplyFilters = () => {
+    setDifficulty(tempDifficulty);
+    setStatus(tempStatus);
+    setSearchTerm(tempSearchTerm);
+    setSelectedCategory(tempSelectedCategory);
+  };
+
+  const handleResetFilters = () => {
+    setTempDifficulty('all');
+    setTempStatus('all');
+    setTempSearchTerm('');
+    setTempSelectedCategory('all');
+    setDifficulty('all');
+    setStatus('all');
+    setSearchTerm('');
+    setSelectedCategory('all');
+  };
 
   const fetchProblems = async () => {
     try {
@@ -49,9 +76,9 @@ const ProblemList = ({ onProblemSelect }) => {
       filtered = filtered.filter(problem => problem.difficulty === difficulty);
     }
 
-    // Apply status filter (placeholder for future implementation)
+    // Apply status filter
     if (status !== 'all') {
-      // You'll need to implement status filtering based on user submissions
+      filtered = filtered.filter(problem => problem.userStatus === status);
     }
 
     // Apply category filter
@@ -101,8 +128,8 @@ const ProblemList = ({ onProblemSelect }) => {
             <input
               type="text"
               placeholder="Search problems..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              value={tempSearchTerm}
+              onChange={(e) => setTempSearchTerm(e.target.value)}
               className="w-full px-3 py-2 bg-surface-light border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary text-text placeholder-text-muted"
             />
           </div>
@@ -111,8 +138,8 @@ const ProblemList = ({ onProblemSelect }) => {
           <div>
             <label className="block text-sm font-medium text-text mb-2">Difficulty</label>
             <select
-              value={difficulty}
-              onChange={(e) => setDifficulty(e.target.value)}
+              value={tempDifficulty}
+              onChange={(e) => setTempDifficulty(e.target.value)}
               className="w-full px-3 py-2 bg-surface-light border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary text-text"
             >
               <option value="all">All Difficulties</option>
@@ -126,8 +153,8 @@ const ProblemList = ({ onProblemSelect }) => {
           <div>
             <label className="block text-sm font-medium text-text mb-2">Category</label>
             <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
+              value={tempSelectedCategory}
+              onChange={(e) => setTempSelectedCategory(e.target.value)}
               className="w-full px-3 py-2 bg-surface-light border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary text-text"
             >
               <option value="all">All Categories</option>
@@ -143,8 +170,8 @@ const ProblemList = ({ onProblemSelect }) => {
           <div>
             <label className="block text-sm font-medium text-text mb-2">Status</label>
             <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              value={tempStatus}
+              onChange={(e) => setTempStatus(e.target.value)}
               className="w-full px-3 py-2 bg-surface-light border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary text-text"
             >
               <option value="all">All Status</option>
@@ -153,6 +180,22 @@ const ProblemList = ({ onProblemSelect }) => {
               <option value="unsolved">Unsolved</option>
             </select>
           </div>
+        </div>
+
+        {/* Filter Buttons */}
+        <div className="flex gap-3 mt-4">
+          <button
+            onClick={handleApplyFilters}
+            className="px-6 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors font-medium"
+          >
+            Apply Filters
+          </button>
+          <button
+            onClick={handleResetFilters}
+            className="px-6 py-2 bg-surface-light text-text border border-border rounded-md hover:bg-surface-dark transition-colors font-medium"
+          >
+            Reset Filters
+          </button>
         </div>
       </div>
 
@@ -178,8 +221,8 @@ const ProblemList = ({ onProblemSelect }) => {
               >
                 <td className="px-6 py-4">
                   <span className="text-lg">
-                    {problem.status === 'solved' ? '✅' :
-                     problem.status === 'attempted' ? '🟡' : '⚪'}
+                    {problem.userStatus === 'solved' ? '✅' :
+                     problem.userStatus === 'attempted' ? '🟡' : '⚪'}
                   </span>
                 </td>
                 <td className="px-6 py-4">

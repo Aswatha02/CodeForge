@@ -17,10 +17,13 @@ const SubmissionHistory = () => {
   const fetchSubmissions = async () => {
     try {
       setLoading(true);
+      console.log('📥 Fetching submissions with filters:', filters);
       const response = await userAPI.getUserSubmissions(filters);
+      console.log('✅ Submissions response:', response.data);
       setSubmissions(response.data || []);
     } catch (error) {
-      console.error('Error fetching submissions:', error);
+      console.error('❌ Error fetching submissions:', error);
+      console.error('Error details:', error.response?.data);
     } finally {
       setLoading(false);
     }
