@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { userAPI } from '../services/api';
+import { userAPI, contestAPI } from '../services/api';
 
-const ContestList = () => {
+const ContestList = ({ onEnterContest }) => {
   const [contests, setContests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all'); // all, upcoming, ongoing, past
@@ -14,7 +14,21 @@ const ContestList = () => {
     try {
       setLoading(true);
       const response = await userAPI.getContests();
-      setContests(response.data || []);
+      const contestsData = response.data || [];
+      
+      // Check registration status for each contest
+      const contestsWithStatus = await Promise.all(
+        contestsData.map(async (contest) => {
+          try {
+            const regResponse = await contestAPI.checkRegistration(contest.id);
+            return { ...contest, isRegistered: regResponse.data.isRegistered };
+          } catch (err) {
+            return { ...contest, isRegistered: false };
+          }
+        })
+      );
+      
+      setContests(contestsWithStatus);
     } catch (error) {
       console.error('Error fetching contests:', error);
     } finally {
@@ -156,16 +170,37 @@ const ContestList = () => {
                       </button>
                     )}
                     {status === 'ongoing' && (
-                      <button
-                        onClick={() => {/* Navigate to contest */}}
-                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium"
-                      >
-                        Enter Contest
-                      </button>
+                      contest.isRegistered ? (
+                        <button
+                          onClick={() => {
+                            if (onEnterContest) {
+                              onEnterContest(contest.id, 'dashboard');
+                            } else {
+                              alert(`Entering contest: ${contest.title} (ID: ${contest.id})`);
+                            }
+                          }}
+                          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                        >
+                          Enter Contest
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleJoinContest(contest.id)}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                        >
+                          Join to Enter
+                        </button>
+                      )
                     )}
                     {status === 'past' && (
                       <button
-                        onClick={() => {/* Navigate to contest results */}}
+                        onClick={() => {
+                          if (onEnterContest) {
+                            onEnterContest(contest.id, 'leaderboard');
+                          } else {
+                            alert(`Viewing results for: ${contest.title} (ID: ${contest.id})`);
+                          }
+                        }}
                         className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium"
                       >
                         View Results

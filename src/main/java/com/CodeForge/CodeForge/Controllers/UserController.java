@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -35,7 +36,7 @@ public class UserController {
 
     // Constructor injection
     @Autowired
-    public UserController(UserService userService, SubmissionService submissionService, JwtUtil jwtUtil, UserDetailsService userDetailsService) {
+    public UserController(UserService userService, SubmissionService submissionService, JwtUtil jwtUtil, @Qualifier("customUserDetailsService") UserDetailsService userDetailsService) {
         this.userService = userService;
         this.submissionService = submissionService;
         this.jwtUtil = jwtUtil;

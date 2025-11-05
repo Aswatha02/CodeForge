@@ -4,12 +4,7 @@ import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import com.CodeForge.CodeForge.Exception.UserNotAuthorizedException;
 import com.CodeForge.CodeForge.dto.SubmissionRequest;
@@ -23,7 +18,6 @@ import com.CodeForge.CodeForge.services.SubmissionService;
 public class SubmissionController {
 
     private final SubmissionService submissionService;
-
     private final UserRepository userRepository;
 
     @Autowired
@@ -32,9 +26,11 @@ public class SubmissionController {
         this.userRepository = userRepository;
     }
 
-    // Submit code for a regular problem (no contest)
+    /** 
+     * Submit code for a regular problem (non-contest)
+     */
     @PostMapping("/problems/{problemId}/submissions")
-    public ResponseEntity<Submission> submitProblemCode(
+    public ResponseEntity<?> submitProblemCode(
             @PathVariable Long problemId,
             @RequestBody SubmissionRequest dto,
             java.security.Principal principal) {
@@ -44,21 +40,25 @@ public class SubmissionController {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UserNotAuthorizedException("submit code"));
 
-        Submission submission = submissionService.submitCode(
-                problemId,
-                null,
-                user,
-                dto.getCode(),
-                dto.getLanguage()
-        );
-                
-
-        return ResponseEntity.ok(submission);
+        try {
+            Submission submission = submissionService.submitCode(
+                    problemId,
+                    null,
+                    user,
+                    dto.getCode(),
+                    dto.getLanguageEnum()
+            );
+            return ResponseEntity.ok(submission);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Submission failed: " + e.getMessage());
+        }
     }
 
-    // Submit code for a problem inside a contest
+    /**
+     * Submit code for a contest problem
+     */
     @PostMapping("/contests/{contestId}/problems/{problemId}/submissions")
-    public ResponseEntity<Submission> submitContestCode(
+    public ResponseEntity<?> submitContestCode(
             @PathVariable Long contestId,
             @PathVariable Long problemId,
             @RequestBody SubmissionRequest dto,
@@ -69,18 +69,23 @@ public class SubmissionController {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UserNotAuthorizedException("submit code"));
 
-        Submission submission = submissionService.submitCode(
-                problemId,
-                contestId,
-                user,
-                dto.getCode(),
-                dto.getLanguage()
-        );
-
-        return ResponseEntity.ok(submission);
+        try {
+            Submission submission = submissionService.submitCode(
+                    problemId,
+                    contestId,
+                    user,
+                    dto.getCode(),
+                    dto.getLanguageEnum()
+            );
+            return ResponseEntity.ok(submission);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Contest submission failed: " + e.getMessage());
+        }
     }
 
-    // Get user's submissions for a problem
+    /**
+     * Get user's submissions for a problem
+     */
     @GetMapping("/users/{userId}/problems/{problemId}/submissions")
     public ResponseEntity<List<Submission>> getSubmissionsByUserAndProblem(
             @PathVariable Long userId,
@@ -90,7 +95,26 @@ public class SubmissionController {
         return ResponseEntity.ok(submissions);
     }
 
-    // Get user's submissions in a contest
+    /**
+     * Get current user's submissions for a problem
+     */
+    @GetMapping("/users/me/problems/{problemId}/submissions")
+    public ResponseEntity<?> getMySubmissionsByProblem(
+            @PathVariable Long problemId,
+            java.security.Principal principal) {
+
+        if (principal == null) throw new UserNotAuthorizedException("get submissions");
+        String username = principal.getName();
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new UserNotAuthorizedException("get submissions"));
+
+        List<Submission> submissions = submissionService.getSubmissionsByUserAndProblem(user.getId(), problemId);
+        return ResponseEntity.ok(submissions);
+    }
+
+    /**
+     * Get user's submissions in a contest
+     */
     @GetMapping("/contests/{contestId}/users/{userId}/submissions")
     public ResponseEntity<List<Submission>> getSubmissionsByContestAndUser(
             @PathVariable Long contestId,
@@ -100,9 +124,14 @@ public class SubmissionController {
         return ResponseEntity.ok(submissions);
     }
 
-    // Rerun a submission (users can only rerun their own submissions)
+    /**
+     * Rerun a submission (users can only rerun their own)
+     */
     @PostMapping("/submissions/{submissionId}/rerun")
-    public ResponseEntity<?> rerunSubmission(@PathVariable Long submissionId, java.security.Principal principal) {
+    public ResponseEntity<?> rerunSubmission(
+            @PathVariable Long submissionId,
+            java.security.Principal principal) {
+
         if (principal == null) {
             return ResponseEntity.status(401).body("Authentication required");
         }
@@ -112,17 +141,14 @@ public class SubmissionController {
                 .orElseThrow(() -> new UserNotAuthorizedException("rerun submission"));
 
         try {
-            // Verify the submission belongs to the authenticated user
             Submission submission = submissionService.getSubmissionById(submissionId);
-            if (submission == null) {
+            if (submission == null)
                 return ResponseEntity.notFound().build();
-            }
 
-            if (!submission.getUser().getId().equals(user.getId())) {
+            if (!submission.getUser().getId().equals(user.getId()))
                 return ResponseEntity.status(403).body("You can only rerun your own submissions");
-            }
 
-            // Rerun the submission
+            // Uses new executeInDocker method internally
             Submission rerunResult = submissionService.rerunSubmission(submissionId);
             return ResponseEntity.ok(rerunResult);
 
@@ -131,9 +157,14 @@ public class SubmissionController {
         }
     }
 
-    // Get submission code (users can only view their own submission code)
+    /**
+     * Get submission code (users can only view their own)
+     */
     @GetMapping("/submissions/{submissionId}/code")
-    public ResponseEntity<String> getSubmissionCode(@PathVariable Long submissionId, java.security.Principal principal) {
+    public ResponseEntity<?> getSubmissionCode(
+            @PathVariable Long submissionId,
+            java.security.Principal principal) {
+
         if (principal == null) {
             return ResponseEntity.status(401).body("Authentication required");
         }
@@ -143,17 +174,13 @@ public class SubmissionController {
                 .orElseThrow(() -> new UserNotAuthorizedException("get submission code"));
 
         try {
-            // Verify the submission belongs to the authenticated user
             Submission submission = submissionService.getSubmissionById(submissionId);
-            if (submission == null) {
+            if (submission == null)
                 return ResponseEntity.notFound().build();
-            }
 
-            if (!submission.getUser().getId().equals(user.getId())) {
+            if (!submission.getUser().getId().equals(user.getId()))
                 return ResponseEntity.status(403).body("You can only view your own submission code");
-            }
 
-            // Get the submission code
             String code = submissionService.getSubmissionCode(submissionId);
             return ResponseEntity.ok(code);
 
@@ -162,4 +189,3 @@ public class SubmissionController {
         }
     }
 }
-

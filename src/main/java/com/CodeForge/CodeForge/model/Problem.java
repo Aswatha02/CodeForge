@@ -60,7 +60,7 @@ public class Problem {
 
     // Constraints and limits
     @Column(name = "time_limit_ms", nullable = false)
-    private Integer timeLimitMs = 2000; // milliseconds
+    private Integer timeLimitMs = 10000; // milliseconds
 
     @Column(name = "memory_limit_mb", nullable = false)
     private Integer memoryLimitMb = 256; // MB
@@ -123,10 +123,12 @@ public class Problem {
     // SOLUTION: Use Set instead of List and remove @Fetch annotations
     @OneToMany(mappedBy = "problem", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
     @JsonManagedReference
+    @JsonIgnore 
     private Set<CodeTemplate> codeTemplates = new HashSet<>();
 
     @OneToMany(mappedBy = "problem", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
     @JsonManagedReference
+    @JsonIgnore 
     private Set<TestCase> testCases = new HashSet<>();
 
     @JsonIgnore

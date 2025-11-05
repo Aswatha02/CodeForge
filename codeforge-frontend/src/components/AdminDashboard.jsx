@@ -246,21 +246,61 @@ public:
     setLoading(false)
   }
 
+  const fetchStats = async () => {
+    setLoading(true)
+    setError("")
+    try {
+      const response = await adminAPI.getStats()
+      setStats(response.data)
+    } catch (error) {
+      console.error("Error fetching stats:", error)
+      if (error.response?.status === 403) {
+        setError("Access denied. Please check if you have admin privileges.")
+      } else if (error.response?.status === 401) {
+        setError("Authentication failed. Please log in again.")
+      } else {
+        setError("Failed to load statistics.")
+      }
+    }
+    setLoading(false)
+  }
+
+  const fetchRecentActivity = async () => {
+    setLoading(true)
+    setError("")
+    try {
+      const response = await adminAPI.getActivity()
+      setRecentActivity(response.data)
+    } catch (error) {
+      console.error("Error fetching recent activity:", error)
+      if (error.response?.status === 403) {
+        setError("Access denied.")
+      } else {
+        setError("Failed to load recent activity.")
+      }
+    }
+    setLoading(false)
+  }
+
   const fetchUsers = async () => {
+    console.log('📥 Fetching users with filters:', userFilters)
     setLoading(true)
     setError("")
     try {
       const response = await adminAPI.getUsers(userFilters)
+      console.log('✅ Users fetched successfully:', response.data)
       setUsers(response.data)
       // Assuming the API returns total count in headers or response
       // For now, we'll use the length of returned data
       setTotalUsers(response.data.length)
+      console.log(`📊 Total users: ${response.data.length}`)
     } catch (error) {
-      console.error("Error fetching users:", error)
+      console.error("❌ Error fetching users:", error)
+      console.error("Error response:", error.response?.data)
       if (error.response?.status === 403) {
         setError("You don't have permission to view users.")
       } else {
-        setError("Failed to load users")
+        setError("Failed to load users: " + (error.response?.data?.message || error.message))
       }
       setUsers([])
     }
@@ -407,6 +447,8 @@ public:
       await adminAPI.deleteUser(userId)
       setUsers(users.filter(user => user.id !== userId))
       setTotalUsers(totalUsers - 1)
+      // Refresh user stats to update the counts
+      await fetchUserStats()
     } catch (error) {
       console.error("Error deleting user:", error)
       if (error.response?.status === 403) {
@@ -426,6 +468,8 @@ public:
       setUsers(users.map(user =>
         user.id === userId ? { ...user, role: newRole } : user
       ))
+      // Refresh user stats to update the counts
+      await fetchUserStats()
     } catch (error) {
       console.error("Error changing user role:", error)
       if (error.response?.status === 403) {
@@ -445,6 +489,8 @@ public:
       setUsers(users.map(user =>
         user.id === userId ? { ...user, status: newStatus } : user
       ))
+      // Refresh user stats to update the counts
+      await fetchUserStats()
     } catch (error) {
       console.error("Error updating user status:", error)
       if (error.response?.status === 403) {
@@ -504,6 +550,8 @@ public:
       ))
       setShowEditUser(false)
       setSelectedUser(null)
+      // Refresh user stats to update the counts
+      await fetchUserStats()
     } catch (error) {
       console.error("Error updating user:", error)
       if (error.response?.status === 403) {
@@ -939,8 +987,9 @@ public:
       } else {
         setError("Failed to create problem. Please check the console for details.")
       }
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   const handleCreateContest = async () => {
@@ -989,7 +1038,46 @@ public:
     setLoading(false)
   }
 
+  const handleEditContest = (contest) => {
+    setContestFormData({
+      id: contest.id,
+      title: contest.title,
+      description: contest.description,
+      startTime: contest.startTime,
+      endTime: contest.endTime,
+      problemIds: contest.problemIds || []
+    })
+    setShowContestModal(true)
+  }
+
+  const handleDeleteContest = async (contestId) => {
+    if (!window.confirm("Are you sure you want to delete this contest? This action cannot be undone.")) {
+      return
+    }
+
+    setLoading(true)
+    setError("")
+    try {
+      await adminAPI.deleteContest(contestId)
+      fetchContests() // Refresh the contests list
+      alert("Contest deleted successfully!")
+    } catch (error) {
+      console.error("Error deleting contest:", error)
+      if (error.response?.status === 403) {
+        setError("You don't have permission to delete contests.")
+      } else {
+        setError(error.response?.data?.message || "Failed to delete contest")
+      }
+    }
+    setLoading(false)
+  }
+
   useEffect(() => {
+    if (activeTab === "dashboard") {
+      fetchStats()
+      fetchRecentActivity()
+      fetchUserStats()
+    }
     if (activeTab === "users") {
       fetchUsers()
       fetchUserStats()
@@ -1689,10 +1777,16 @@ public:
                         <td className="px-6 py-4 text-text">{contest.participantCount}</td>
                         <td className="px-6 py-4">
                           <div className="flex space-x-2">
-                            <button className="text-blue-400 hover:text-blue-300 text-sm">
+                            <button 
+                              onClick={() => handleEditContest(contest)}
+                              className="text-blue-400 hover:text-blue-300 text-sm"
+                            >
                               Edit
                             </button>
-                            <button className="text-red-400 hover:text-red-300 text-sm">
+                            <button 
+                              onClick={() => handleDeleteContest(contest.id)}
+                              className="text-red-400 hover:text-red-300 text-sm"
+                            >
                               Delete
                             </button>
                           </div>

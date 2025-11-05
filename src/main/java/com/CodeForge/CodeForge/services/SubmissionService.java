@@ -13,9 +13,13 @@ import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.CodeForge.CodeForge.dto.SubmissionExecutionResponse;
 import com.CodeForge.CodeForge.model.CodeTemplate;
 import com.CodeForge.CodeForge.model.Contest;
 import com.CodeForge.CodeForge.model.ContestParticipant;
@@ -32,8 +36,6 @@ import com.CodeForge.CodeForge.repository.ProblemRepository;
 import com.CodeForge.CodeForge.repository.SubmissionRepository;
 import com.CodeForge.CodeForge.repository.TestCaseRepository;
 import com.CodeForge.CodeForge.repository.UserRepository;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 @Transactional
@@ -116,8 +118,17 @@ public class SubmissionService {
         submission = submissionRepository.save(submission);
 
         try {
-            // Get all test cases for the problem
-            List<TestCase> testCases = testCaseRepository.findByProblem(problem);
+            // Get all test cases for the problem (ordered by ID to ensure consistent execution order)
+            List<TestCase> testCases = testCaseRepository.findByProblemOrderByIdAsc(problem);
+            
+            // Debug: Log test case data
+            System.out.println("=== DEBUG: Test Cases for Problem " + problem.getId() + " ===");
+            for (int i = 0; i < testCases.size(); i++) {
+                TestCase tc = testCases.get(i);
+                System.out.println("Test Case " + (i+1) + " (ID: " + tc.getId() + "):");
+                System.out.println("  Input: " + tc.getInputData());
+                System.out.println("  Expected: " + tc.getExpectedOutput());
+            }
             
             if (testCases.isEmpty()) {
                 submission.setStatus(Submission.Status.ACCEPTED);
@@ -160,75 +171,93 @@ public class SubmissionService {
             CodeTemplate codeTemplate = codeTemplateRepository.findByProblemAndLanguage(problem, templateLanguage)
                 .orElseThrow(() -> new IllegalArgumentException("Code template not found for problem and language"));
 
-            // Use visible code for execution if hidden code is not available
-            String executionCode;
-            if (codeTemplate.getHiddenCode() != null && !codeTemplate.getHiddenCode().trim().isEmpty()) {
-                // Use hidden code with user code inserted via {{USER_CODE}} placeholder
-                executionCode = combineUserCodeWithTemplate(submission.getCode(), codeTemplate);
-            } else {
-                // Fallback: use visible code directly (backward compatibility)
-                executionCode = submission.getCode();
+            // For now, always use the user's submitted code directly to avoid template indentation issues
+            // TODO: Fix template system to properly handle indentation
+            String executionCode = submission.getCode();
+
+            // Detect function name from combined code
+            String functionName = functionSignatureService.detectFunctionName(executionCode, submission.getLanguage());
+            if (!functionSignatureService.isValidFunctionName(functionName)) {
+                functionName = "solve"; // fallback
             }
 
-            // Execute each test case individually
+            // Debug logging
+            System.out.println("=== DEBUG: Submission Execution ===");
+            System.out.println("Problem ID: " + problem.getId());
+            System.out.println("Time limit: " + problem.getTimeLimitMs() + "ms");
+            System.out.println("Memory limit: " + problem.getMemoryLimitMb() + "MB");
+            System.out.println("Language: " + submission.getLanguage());
+            System.out.println("Test cases count: " + testCases.size());
+            System.out.println("Function name: " + functionName);
+            System.out.println("Execution code length: " + executionCode.length());
+
+            // Execute all test cases in batch using ExecutionService
+            SubmissionExecutionResponse response = executionService.executeSubmissionCode(
+                executionCode,
+                submission.getLanguage().name(),
+                testCases,
+                problem.getTimeLimitMs(),
+                problem.getMemoryLimitMb(),
+                functionName
+            );
+
+            // Process batch execution results
             submission.setTotalTestCases(testCases.size());
-            submission.setPassedTestCases(0);
+            int passedCount = 0;
+            boolean hasTimeLimit = false;
+            boolean hasError = false;
+            String errorMsg = null;
 
-            int totalExecutionTime = 0;
-            int maxMemoryUsed = 0;
-
-            for (TestCase testCase : testCases) {
-                try {
-                    ExecutionResult result = executeSingleTestCase(executionCode, submission.getLanguage(),
-                                                                 testCase.getInputData(),
-                                                                 problem.getTimeLimitMs(),
-                                                                 problem.getMemoryLimitMb());
-
-                    if (result.timedOut) {
-                        submission.setStatus(Submission.Status.TIME_LIMIT_EXCEEDED);
-                        submission.setErrorMessage("Time limit exceeded");
-                        return submission;
-                    }
-
-                    if (result.error != null) {
-                        if (result.error.contains("error:")) {
-                            submission.setStatus(Submission.Status.COMPILATION_ERROR);
-                            submission.setErrorMessage("Compilation error: " + result.error);
-                        } else {
-                            submission.setStatus(Submission.Status.RUNTIME_ERROR);
-                            submission.setErrorMessage("Runtime error: " + result.error);
-                        }
-                        return submission;
-                    }
-
-                    // Compare output
-                    String normalizedActual = normalizeOutput(result.output);
-                    String normalizedExpected = normalizeOutput(testCase.getExpectedOutput());
-
-                    if (!normalizedActual.equals(normalizedExpected)) {
-                        submission.setStatus(Submission.Status.WRONG_ANSWER);
-                        submission.setActualOutput(result.output);
-                        submission.setExpectedOutput(testCase.getExpectedOutput());
-                        submission.setErrorMessage("Wrong answer on test case");
-                        return submission;
-                    }
-
-                    // Update metrics
-                    totalExecutionTime += result.executionTime;
-                    maxMemoryUsed = Math.max(maxMemoryUsed, result.memoryUsed);
-                    submission.setPassedTestCases(submission.getPassedTestCases() + 1);
-
-                } catch (Exception e) {
-                    submission.setStatus(Submission.Status.RUNTIME_ERROR);
-                    submission.setErrorMessage("Execution error: " + e.getMessage());
-                    return submission;
+            for (SubmissionExecutionResponse.TestCaseResult result : response.getTestCaseResults()) {
+                if (result.isTimedOut()) {
+                    hasTimeLimit = true;
+                    errorMsg = "Time limit exceeded";
+                    break;
+                }
+                if (result.getError() != null) {
+                    hasError = true;
+                    errorMsg = result.getError();
+                    break;
+                }
+                if (result.isPassed()) {
+                    passedCount++;
                 }
             }
 
-            // All test cases passed
-            submission.setStatus(Submission.Status.ACCEPTED);
-            submission.setExecutionTime(totalExecutionTime / testCases.size()); // Average time
-            submission.setMemoryUsed(maxMemoryUsed);
+            if (hasTimeLimit) {
+                submission.setStatus(Submission.Status.TIME_LIMIT_EXCEEDED);
+                submission.setErrorMessage(errorMsg);
+            } else if (hasError) {
+                if (errorMsg != null && errorMsg.contains("Compilation")) {
+                    submission.setStatus(Submission.Status.COMPILATION_ERROR);
+                } else {
+                    submission.setStatus(Submission.Status.RUNTIME_ERROR);
+                }
+                submission.setErrorMessage(errorMsg);
+            } else if (passedCount == testCases.size()) {
+                submission.setStatus(Submission.Status.ACCEPTED);
+                submission.setPassedTestCases(passedCount);
+                submission.setExecutionTime(response.getTotalExecutionTime());
+                submission.setMemoryUsed(response.getMaxMemoryUsed());
+            } else {
+                submission.setStatus(Submission.Status.WRONG_ANSWER);
+                submission.setPassedTestCases(passedCount);
+                // Set details from first failed test case
+                for (SubmissionExecutionResponse.TestCaseResult result : response.getTestCaseResults()) {
+                    if (!result.isPassed() && !result.isTimedOut() && result.getError() == null) {
+                        submission.setActualOutput(result.getActualOutput());
+                        // Find expected output from test cases
+                        TestCase failedTestCase = testCases.stream()
+                            .filter(tc -> tc.getId().equals(result.getTestCaseId()))
+                            .findFirst()
+                            .orElse(null);
+                        if (failedTestCase != null) {
+                            submission.setExpectedOutput(failedTestCase.getExpectedOutput());
+                        }
+                        break;
+                    }
+                }
+            }
 
             return submission;
 
@@ -537,119 +566,53 @@ public class SubmissionService {
         return sb.toString();
     }
 
-    private ExecutionResult executeInDocker(String executionCode, Submission.Language language,
-                                      int timeLimitMs, int memoryLimitMb) throws Exception {
-    String imageName = getDockerImage(language);
-    String containerName = "submission-" + System.currentTimeMillis();
-
-    // Create temporary files - create multiple files for Java
-    Path codeDir = Files.createTempDirectory("code");
+    private ExecutionResult executeInDocker(String executionCode, Submission.Language language, int timeLimitMs, int memoryLimitMb)
+        throws IOException, InterruptedException {
     
-    // For Java, we need to create both Solution.java and Main.java
-    if (language == Submission.Language.JAVA) {
-        // Parse the execution code to separate Solution.java and Main.java
-        String[] javaFiles = parseJavaExecutionCode(executionCode);
-        if (javaFiles.length == 2) {
-            Files.write(codeDir.resolve("Solution.java"), javaFiles[0].getBytes());
-            Files.write(codeDir.resolve("Main.java"), javaFiles[1].getBytes());
-        } else {
-            // Fallback: write as single file
-            Files.write(codeDir.resolve("Main.java"), executionCode.getBytes());
-        }
-    } else {
-        // For other languages, write single file
-        Path codeFile = codeDir.resolve(getFileName(language));
-        Files.write(codeFile, executionCode.getBytes());
+    // Write code to temp dir
+    Path tempDir = Files.createTempDirectory("submission_");
+    Path codeFile = tempDir.resolve(getFileName(language));
+    Files.writeString(codeFile, executionCode);
+
+    String dockerImage = getDockerImage(language);
+    String execCmd = getExecutionCommand(language);
+
+    String dockerPath = tempDir.toAbsolutePath().toString().replace("\\", "/").replace("C:", "/c");
+    String dockerCommand = String.format(
+        "docker run --rm --memory=%dm --cpus=0.5 --user root -v \"%s:/code\" %s sh -c \"%s\"",
+        memoryLimitMb, dockerPath, dockerImage, execCmd
+    );
+
+    long start = System.currentTimeMillis();
+    Process process = new ProcessBuilder("bash", "-c", dockerCommand)
+            .redirectErrorStream(true)
+            .start();
+
+    boolean finished = process.waitFor(timeLimitMs, TimeUnit.MILLISECONDS);
+    long end = System.currentTimeMillis();
+    int execTime = (int) (end - start);
+
+    String output;
+    try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+        output = reader.lines().collect(Collectors.joining("\n"));
     }
 
-    try {
-        // Docker run command with resource limits
-        String executionCommand = getExecutionCommand(language);
-        ProcessBuilder pb;
-
-        // ALWAYS use shell execution for commands that need it
-        boolean needsShell = language == Submission.Language.JAVA || 
-                           language == Submission.Language.CPP || 
-                           language == Submission.Language.C ||
-                           executionCommand.contains("&&") || 
-                           executionCommand.contains(";") ||
-                           executionCommand.contains("cd");
-
-        if (needsShell) {
-            pb = new ProcessBuilder(
-                "docker", "run", "--rm",
-                "--name", containerName,
-                "--memory", memoryLimitMb + "m",
-                "--memory-swap", memoryLimitMb + "m",
-                "--cpus", "0.5",
-                "--user", "root",
-                "-v", codeDir.toString() + ":/code:rw",
-                imageName,
-                "/bin/sh", "-c", executionCommand
-            );
-        } else {
-            pb = new ProcessBuilder(
-                "docker", "run", "--rm",
-                "--name", containerName,
-                "--memory", memoryLimitMb + "m",
-                "--memory-swap", memoryLimitMb + "m",
-                "--cpus", "0.5",
-                "--user", "root",
-                "-v", codeDir.toString() + ":/code:rw",
-                imageName,
-                executionCommand
-            );
-        }
-
-        // Add debug logging
-        System.out.println("=== DEBUG: Submission Docker Execution ===");
-        System.out.println("Command: " + String.join(" ", pb.command()));
-        System.out.println("Language: " + language);
-        System.out.println("Execution Command: " + executionCommand);
-        System.out.println("Using Shell: " + needsShell);
-
-        // List files in directory for debugging
-        System.out.println("Files in code directory:");
-        Files.list(codeDir).forEach(path -> {
-            System.out.println("  - " + path.getFileName());
-        });
-
-        Process process = pb.start();
-
-        // Wait with timeout - very generous buffer for Docker startup, image pull, and compilation
-        int timeoutBuffer = language == Submission.Language.JAVA || language == Submission.Language.CPP || language == Submission.Language.C ? 300000 : 60000; // 5 min for compiled, 1 min for interpreted
-        boolean finished = process.waitFor(timeLimitMs + timeoutBuffer, TimeUnit.MILLISECONDS);
-
-        if (!finished) {
-            new ProcessBuilder("docker", "kill", containerName).start().waitFor();
-            return new ExecutionResult(null, true, timeLimitMs, 0, "Time limit exceeded");
-        }
-
-        // Read output
-        String output = readStream(process.getInputStream());
-        String error = readStream(process.getErrorStream());
-        int exitCode = process.exitValue();
-
-        // Add debug logging for output
-        System.out.println("=== DEBUG: Submission Execution Output ===");
-        System.out.println("Exit Code: " + exitCode);
-        System.out.println("Output: " + output);
-        System.out.println("Error: " + error);
-
-        if (exitCode != 0) {
-            return new ExecutionResult(null, false, 0, 0, "Runtime error: " + error);
-        }
-
-        // Calculate execution metrics
-        int execTime = Math.min(timeLimitMs, 50 + (int)(Math.random() * 100));
-        int memory = Math.min(memoryLimitMb, 10 + (int)(Math.random() * 20));
-
-        return new ExecutionResult(output, false, execTime, memory, null);
-
-    } finally {
-        deleteDirectory(codeDir);
+    String error = null;
+    if (!finished) {
+        process.destroyForcibly();
+        return new ExecutionResult("", true, execTime, 0, "Time limit exceeded");
     }
+    int exitCode = process.exitValue();
+    if (exitCode != 0) {
+        error = "Exit code: " + exitCode + "\n" + output;
+    }
+
+    deleteDirectory(tempDir);
+    return new ExecutionResult(output.trim(), false, execTime, 0, error);
 }
+
+
+
 
 // Helper method to parse Java execution code into Solution.java and Main.java
 private String[] parseJavaExecutionCode(String executionCode) {
@@ -712,14 +675,15 @@ private String[] parseJavaExecutionCode(String executionCode) {
 }
 
     private String readStream(InputStream inputStream) throws IOException {
-        BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
-        StringBuilder result = new StringBuilder();
-        String line;
-        while ((line = reader.readLine()) != null) {
-            result.append(line).append("\n");
-        }
-        return result.toString().trim();
+    BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
+    StringBuilder builder = new StringBuilder();
+    String line;
+    while ((line = reader.readLine()) != null) {
+        builder.append(line).append("\n");
     }
+    return builder.toString();
+}
+
 
     private String normalizeOutput(String output) {
         return output.trim().replaceAll("\\r\\n", "\n").replaceAll("\\s+", " ");
@@ -840,8 +804,8 @@ private String[] parseJavaExecutionCode(String executionCode) {
 
         submission = submissionRepository.save(submission);
 
-        // Re-execute against test cases
-        List<TestCase> testCases = testCaseRepository.findByProblem(submission.getProblem());
+        // Re-execute against test cases (ordered by ID)
+        List<TestCase> testCases = testCaseRepository.findByProblemOrderByIdAsc(submission.getProblem());
         return executeAgainstTestCases(submission, submission.getProblem(), testCases);
     }
 

@@ -6,11 +6,15 @@ import SubmissionHistory from './SubmissionHistory';
 import UserProfile from './UserProfile';
 import Leaderboard from './Leaderboard';
 import ContestList from './ContestList';
+import ContestDashboard from './ContestDashboard';
+import ContestLeaderboard from './ContestLeaderboard';
 
 const UserDashboard = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [user, setUser] = useState(null);
   const [selectedProblem, setSelectedProblem] = useState(null);
+  const [selectedContestId, setSelectedContestId] = useState(null);
+  const [contestView, setContestView] = useState(null); // 'dashboard' or 'leaderboard'
   const [stats, setStats] = useState({
     problemsSolved: 0,
     totalSubmissions: 0,
@@ -168,7 +172,21 @@ const UserDashboard = ({ onLogout }) => {
       case 'problems':
         return <ProblemList onProblemSelect={setSelectedProblem} />;
       case 'contests':
-        return <ContestList />;
+        if (selectedContestId && contestView === 'dashboard') {
+          return <ContestDashboard contestId={selectedContestId} onBack={() => {
+            setSelectedContestId(null);
+            setContestView(null);
+          }} />;
+        } else if (selectedContestId && contestView === 'leaderboard') {
+          return <ContestLeaderboard contestId={selectedContestId} onBack={() => {
+            setSelectedContestId(null);
+            setContestView(null);
+          }} />;
+        }
+        return <ContestList onEnterContest={(contestId, view) => {
+          setSelectedContestId(contestId);
+          setContestView(view);
+        }} />;
       case 'submissions':
         return <SubmissionHistory />;
       case 'leaderboard':

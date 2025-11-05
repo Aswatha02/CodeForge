@@ -590,6 +590,39 @@ public Problem createProblem(ProblemRequest problemRequest, Long creatorId) {
     public List<CodeTemplate> getCodeTemplates(Long problemId) {
         Problem problem = problemRepository.findById(problemId)
                 .orElseThrow(() -> new RuntimeException("Problem not found"));
-        return codeTemplateRepository.findByProblem(problem);
+        List<CodeTemplate> templates = codeTemplateRepository.findByProblem(problem);
+        
+        // Convert C++ types to C types for C language templates
+        for (CodeTemplate template : templates) {
+            if (template.getLanguage() == CodeTemplate.Language.C) {
+                template.setTemplateCode(convertCppTypesToC(template.getTemplateCode()));
+                if (template.getVisibleCode() != null) {
+                    template.setVisibleCode(convertCppTypesToC(template.getVisibleCode()));
+                }
+            }
+        }
+        
+        return templates;
+    }
+    
+    /**
+     * Convert C++ types to C types
+     */
+    private String convertCppTypesToC(String code) {
+        if (code == null) return null;
+        
+        // Replace string with char*
+        code = code.replaceAll("\\bstring\\b", "char*");
+        
+        // Replace vector<int> with int*
+        code = code.replaceAll("\\bvector<int>\\b", "int*");
+        
+        // Replace vector<string> with char**
+        code = code.replaceAll("\\bvector<char\\*>\\b", "char**");
+        
+        // Replace bool with int (C doesn't have bool in older standards)
+        // code = code.replaceAll("\\bbool\\b", "int");
+        
+        return code;
     }
 }

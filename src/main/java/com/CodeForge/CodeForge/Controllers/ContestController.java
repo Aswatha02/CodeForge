@@ -17,11 +17,22 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.CodeForge.CodeForge.Exception.UserNotAuthorizedException;
+import com.CodeForge.CodeForge.dto.*;
 import com.CodeForge.CodeForge.model.Contest;
 import com.CodeForge.CodeForge.model.ContestParticipant;
+import com.CodeForge.CodeForge.model.ContestProblem;
 import com.CodeForge.CodeForge.model.User;
 import com.CodeForge.CodeForge.repository.UserRepository;
+import com.CodeForge.CodeForge.repository.SubmissionRepository;
 import com.CodeForge.CodeForge.services.ContestService;
+import com.CodeForge.CodeForge.model.Submission;
+
+import java.time.LocalDateTime;
+import java.time.Duration;
+import java.util.stream.Collectors;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Map;
 
 
 
@@ -35,12 +46,51 @@ public class ContestController {
 
     @Autowired
     private UserRepository userRepository;
+    
+    @Autowired
+    private SubmissionRepository submissionRepository;
 
 
     @GetMapping
-    public ResponseEntity<List<Contest>> getAllContests() {
-        List<Contest> contests = contestService.getAllContests();
-        return ResponseEntity.ok(contests);  // 200 OK + JSON list
+    public ResponseEntity<List<ContestResponse>> getAllContests(
+            @RequestParam(required = false) String status,
+            Principal principal) {
+        
+        Contest.Status contestStatus = null;
+        if (status != null) {
+            try {
+                contestStatus = Contest.Status.valueOf(status.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.badRequest().build();
+            }
+        }
+        
+        List<Contest> contests = contestService.listContests(contestStatus);
+        Long currentUserId = getCurrentUserId(principal);
+        
+        List<ContestResponse> responses = contests.stream()
+            .map(contest -> {
+                ContestResponse response = new ContestResponse(contest);
+                response.setParticipantCount(contestService.getParticipantCount(contest.getId()));
+                response.setProblemCount(contestService.getContestProblems(contest.getId()).size());
+                
+                if (currentUserId != null) {
+                    response.setIsRegistered(contestService.checkRegistration(contest.getId(), currentUserId));
+                }
+                
+                // Calculate time remaining
+                LocalDateTime now = LocalDateTime.now();
+                if (contest.getStatus() == Contest.Status.UPCOMING) {
+                    response.setTimeRemaining(Duration.between(now, contest.getStartTime()).getSeconds());
+                } else if (contest.getStatus() == Contest.Status.RUNNING) {
+                    response.setTimeRemaining(Duration.between(now, contest.getEndTime()).getSeconds());
+                }
+                
+                return response;
+            })
+            .collect(Collectors.toList());
+        
+        return ResponseEntity.ok(responses);
     }
 
     @GetMapping("/{id}")
@@ -53,17 +103,43 @@ public class ContestController {
     }
 
     @PostMapping
-    public ResponseEntity<Contest> createContest(
-            @RequestBody Contest contest,
-            @AuthenticationPrincipal User user) { 
+    public ResponseEntity<ContestResponse> createContest(
+            @RequestBody ContestCreateRequest request,
+            Principal principal) { 
 
+        User user = getCurrentUser(principal);
         if (user.getRole() != User.Role.ADMIN && user.getRole() != User.Role.PROBLEM_SETTER) {
             return ResponseEntity.status(403).build();  
         }
 
-        contest.setCreatedBy(user);  
+        Contest contest = new Contest();
+        contest.setTitle(request.getTitle());
+        contest.setDescription(request.getDescription());
+        contest.setStartTime(request.getStartTime());
+        contest.setEndTime(request.getEndTime());
+        contest.setDuration(request.getDuration());
+        contest.setIsPublic(request.getIsPublic());
+        contest.setMaxParticipants(request.getMaxParticipants());
+        contest.setCreatedBy(user);
+        
         Contest savedContest = contestService.createContest(contest);
-        return ResponseEntity.status(201).body(savedContest);  
+        
+        // Add problems if provided
+        if (request.getProblemIds() != null && !request.getProblemIds().isEmpty()) {
+            for (Long problemId : request.getProblemIds()) {
+                try {
+                    contestService.addProblemToContest(savedContest.getId(), problemId, 100);
+                } catch (Exception e) {
+                    // Log error but continue
+                }
+            }
+        }
+        
+        ContestResponse response = new ContestResponse(savedContest);
+        response.setParticipantCount(0L);
+        response.setProblemCount(request.getProblemIds() != null ? request.getProblemIds().size() : 0);
+        
+        return ResponseEntity.status(201).body(response);  
     }
 
    @PutMapping("/{id}")
@@ -164,9 +240,247 @@ public ResponseEntity<List<ContestParticipant>> getParticipants(
         contestService.addProblemToContest(contestId, problemId, points);
         return ResponseEntity.ok().build();
     }
-
-
-
-
-
+    
+    // Get contest dashboard with all details
+    @GetMapping("/{id}/dashboard")
+    public ResponseEntity<ContestDashboardResponse> getContestDashboard(
+            @PathVariable Long id,
+            Principal principal) {
+        
+        Contest contest = contestService.getContest(id);
+        User user = getCurrentUser(principal);
+        
+        // Check if user is registered
+        if (!contestService.checkRegistration(id, user.getId())) {
+            return ResponseEntity.status(403).build();
+        }
+        
+        ContestDashboardResponse dashboard = new ContestDashboardResponse();
+        
+        // Contest info
+        ContestResponse contestResponse = new ContestResponse(contest);
+        contestResponse.setParticipantCount(contestService.getParticipantCount(id));
+        contestResponse.setIsRegistered(true);
+        dashboard.setContest(contestResponse);
+        
+        // Problems
+        List<ContestProblem> contestProblems = contestService.getContestProblems(id);
+        List<ContestProblemResponse> problemResponses = contestProblems.stream()
+            .map(cp -> {
+                ContestProblemResponse pr = new ContestProblemResponse();
+                pr.setId(cp.getProblem().getId());
+                pr.setTitle(cp.getProblem().getTitle());
+                pr.setDifficulty(cp.getProblem().getDifficulty().name());
+                pr.setPoints(cp.getPoints());
+                
+                // Get submission stats
+                List<Submission> allSubmissions = submissionRepository.findByProblemId(cp.getProblem().getId());
+                pr.setTotalSubmissions((int) allSubmissions.stream()
+                    .filter(s -> contestService.checkRegistration(id, s.getUser().getId()))
+                    .count());
+                pr.setAcceptedSubmissions((int) allSubmissions.stream()
+                    .filter(s -> s.getStatus() == Submission.Status.ACCEPTED)
+                    .filter(s -> contestService.checkRegistration(id, s.getUser().getId()))
+                    .count());
+                
+                // User-specific stats
+                List<Submission> userSubmissions = submissionRepository.findByUserIdAndProblemId(
+                    user.getId(), cp.getProblem().getId());
+                pr.setUserAttempts(userSubmissions.size());
+                pr.setSolved(userSubmissions.stream()
+                    .anyMatch(s -> s.getStatus() == Submission.Status.ACCEPTED));
+                
+                return pr;
+            })
+            .collect(Collectors.toList());
+        dashboard.setProblems(problemResponses);
+        
+        // Leaderboard
+        dashboard.setTopRanks(getLeaderboard(id).subList(0, Math.min(10, getLeaderboard(id).size())));
+        dashboard.setUserRank(getUserLeaderboardEntry(id, user.getId()));
+        
+        // Stats
+        ContestDashboardResponse.ContestStats stats = new ContestDashboardResponse.ContestStats();
+        stats.setTotalParticipants(contestService.getParticipantCount(id));
+        
+        LocalDateTime now = LocalDateTime.now();
+        if (contest.getStatus() == Contest.Status.RUNNING) {
+            stats.setTimeElapsed(Duration.between(contest.getStartTime(), now).getSeconds());
+            stats.setTimeRemaining(Duration.between(now, contest.getEndTime()).getSeconds());
+        }
+        
+        dashboard.setStats(stats);
+        
+        return ResponseEntity.ok(dashboard);
+    }
+    
+    // Get contest leaderboard
+    @GetMapping("/{id}/leaderboard")
+    public ResponseEntity<List<LeaderboardEntry>> getContestLeaderboard(@PathVariable Long id) {
+        return ResponseEntity.ok(getLeaderboard(id));
+    }
+    
+    // Get contest problems
+    @GetMapping("/{id}/problems")
+    public ResponseEntity<List<ContestProblemResponse>> getContestProblemsList(
+            @PathVariable Long id,
+            Principal principal) {
+        
+        User user = getCurrentUser(principal);
+        
+        // Check if user is registered
+        if (!contestService.checkRegistration(id, user.getId())) {
+            return ResponseEntity.status(403).build();
+        }
+        
+        List<ContestProblem> contestProblems = contestService.getContestProblems(id);
+        List<ContestProblemResponse> responses = contestProblems.stream()
+            .map(cp -> {
+                ContestProblemResponse pr = new ContestProblemResponse();
+                pr.setId(cp.getProblem().getId());
+                pr.setTitle(cp.getProblem().getTitle());
+                pr.setDifficulty(cp.getProblem().getDifficulty().name());
+                pr.setPoints(cp.getPoints());
+                
+                // User-specific stats
+                List<Submission> userSubmissions = submissionRepository.findByUserIdAndProblemId(
+                    user.getId(), cp.getProblem().getId());
+                pr.setUserAttempts(userSubmissions.size());
+                pr.setSolved(userSubmissions.stream()
+                    .anyMatch(s -> s.getStatus() == Submission.Status.ACCEPTED));
+                
+                return pr;
+            })
+            .collect(Collectors.toList());
+        
+        return ResponseEntity.ok(responses);
+    }
+    
+    // Check registration status
+    @GetMapping("/{id}/registration-status")
+    public ResponseEntity<Map<String, Boolean>> checkRegistrationStatus(
+            @PathVariable Long id,
+            Principal principal) {
+        
+        Long userId = getCurrentUserId(principal);
+        if (userId == null) {
+            return ResponseEntity.status(401).build();
+        }
+        
+        boolean isRegistered = contestService.checkRegistration(id, userId);
+        return ResponseEntity.ok(Map.of("isRegistered", isRegistered));
+    }
+    
+    // Leave contest
+    @DeleteMapping("/{id}/leave")
+    public ResponseEntity<Void> leaveContest(
+            @PathVariable Long id,
+            Principal principal) {
+        
+        User user = getCurrentUser(principal);
+        contestService.unregisterUser(id, user.getId());
+        return ResponseEntity.ok().build();
+    }
+    
+    // Start contest (admin only)
+    @PostMapping("/{id}/start")
+    public ResponseEntity<Void> startContest(
+            @PathVariable Long id,
+            Principal principal) {
+        
+        User user = getCurrentUser(principal);
+        if (user.getRole() != User.Role.ADMIN) {
+            throw new UserNotAuthorizedException("start contest");
+        }
+        
+        contestService.startContest(id);
+        return ResponseEntity.ok().build();
+    }
+    
+    // End contest (admin only)
+    @PostMapping("/{id}/end")
+    public ResponseEntity<Void> endContest(
+            @PathVariable Long id,
+            Principal principal) {
+        
+        User user = getCurrentUser(principal);
+        if (user.getRole() != User.Role.ADMIN) {
+            throw new UserNotAuthorizedException("end contest");
+        }
+        
+        contestService.endContest(id);
+        return ResponseEntity.ok().build();
+    }
+    
+    // Helper methods
+    private User getCurrentUser(Principal principal) {
+        if (principal == null) {
+            throw new RuntimeException("User not authenticated");
+        }
+        return userRepository.findByUsername(principal.getName())
+            .orElseThrow(() -> new RuntimeException("User not found"));
+    }
+    
+    private Long getCurrentUserId(Principal principal) {
+        if (principal == null) {
+            return null;
+        }
+        return userRepository.findByUsername(principal.getName())
+            .map(User::getId)
+            .orElse(null);
+    }
+    
+    private List<LeaderboardEntry> getLeaderboard(Long contestId) {
+        List<ContestParticipant> participants = contestService.getRegisteredUsers(contestId);
+        List<ContestProblem> problems = contestService.getContestProblems(contestId);
+        
+        List<LeaderboardEntry> leaderboard = participants.stream()
+            .map(participant -> {
+                User user = participant.getUser();
+                int totalScore = 0;
+                int problemsSolved = 0;
+                long totalTime = 0;
+                
+                for (ContestProblem cp : problems) {
+                    List<Submission> submissions = submissionRepository.findByUserIdAndProblemId(
+                        user.getId(), cp.getProblem().getId());
+                    
+                    boolean solved = submissions.stream()
+                        .anyMatch(s -> s.getStatus() == Submission.Status.ACCEPTED);
+                    
+                    if (solved) {
+                        totalScore += cp.getPoints();
+                        problemsSolved++;
+                    }
+                }
+                
+                return new LeaderboardEntry(
+                    0, // rank will be set later
+                    user.getId(),
+                    user.getUsername(),
+                    totalScore,
+                    problemsSolved,
+                    totalTime,
+                    0
+                );
+            })
+            .sorted(Comparator.comparing(LeaderboardEntry::getScore).reversed()
+                .thenComparing(LeaderboardEntry::getProblemsSolved).reversed())
+            .collect(Collectors.toList());
+        
+        // Set ranks
+        for (int i = 0; i < leaderboard.size(); i++) {
+            leaderboard.get(i).setRank(i + 1);
+        }
+        
+        return leaderboard;
+    }
+    
+    private LeaderboardEntry getUserLeaderboardEntry(Long contestId, Long userId) {
+        List<LeaderboardEntry> leaderboard = getLeaderboard(contestId);
+        return leaderboard.stream()
+            .filter(entry -> entry.getUserId().equals(userId))
+            .findFirst()
+            .orElse(null);
+    }
 }

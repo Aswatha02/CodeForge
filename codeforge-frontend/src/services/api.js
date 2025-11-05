@@ -98,11 +98,21 @@ export const adminAPI = {
 
 export const contestAPI = {
   // Contest listing and details
-  getAllContests: () => api.get('/contests'),
+  getAllContests: (status) => api.get('/contests', { params: { status } }),
   getContest: (contestId) => api.get(`/contests/${contestId}`),
+  
+  // Contest CRUD (admin/problem setter)
+  createContest: (contestData) => api.post('/contests', contestData),
+  updateContest: (contestId, contestData) => api.put(`/contests/${contestId}`, contestData),
+  deleteContest: (contestId) => api.delete(`/contests/${contestId}`),
   
   // Contest participation
   joinContest: (contestId) => api.post(`/contests/${contestId}/join`),
+  leaveContest: (contestId) => api.delete(`/contests/${contestId}/leave`),
+  checkRegistration: (contestId) => api.get(`/contests/${contestId}/registration-status`),
+  
+  // Contest dashboard
+  getContestDashboard: (contestId) => api.get(`/contests/${contestId}/dashboard`),
   
   // Leaderboard
   getContestLeaderboard: (contestId) => api.get(`/contests/${contestId}/leaderboard`),
@@ -112,21 +122,12 @@ export const contestAPI = {
   
   // Contest problems
   getContestProblems: (contestId) => api.get(`/contests/${contestId}/problems`),
+  addProblemToContest: (contestId, problemId, points) => 
+    api.post(`/contests/${contestId}/problems/${problemId}`, null, { params: { points } }),
   
-  // User contests
-  getUserContests: () => api.get('/users/me/contests'),
-  getActiveContest: () => api.get('/users/me/active-contest'),
-
-  updateContest: async (contestId, contestData) => {
-    const response = await axios.put(`/api/admin/contests/${contestId}`, contestData);
-    return response.data;
-  },
-
-  // Delete contest
-  deleteContest: async (contestId) => {
-    const response = await axios.delete(`/api/admin/contests/${contestId}`);
-    return response.data;
-  }
+  // Contest control (admin)
+  startContest: (contestId) => api.post(`/contests/${contestId}/start`),
+  endContest: (contestId) => api.post(`/contests/${contestId}/end`),
 };
 
 export const userAPI = {

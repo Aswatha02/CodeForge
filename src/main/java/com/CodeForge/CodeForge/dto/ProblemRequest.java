@@ -24,7 +24,7 @@ public class ProblemRequest {
     private String outputFormat;
 
     @NotNull(message = "Time limit is required")
-    private Integer timeLimitMs = 2000;
+    private Integer timeLimitMs = 10000;
 
     @NotNull(message = "Memory limit is required")
     private Integer memoryLimitMb = 256;
